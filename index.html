@@ -193,7 +193,21 @@ body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; pad
 
 <!-- Biblioteca do Supabase (versão fixa, via CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.1/dist/umd/supabase.js"></script>
+<!-- Plano B: se a biblioteca acima não carregar, usa uma versão mais antiga -->
+<script>window.supabase || document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"><\/script>');</script>
 <script>
+/* Se algo falhar ao carregar, mostra o erro no ecrã em vez de ficar tudo preto */
+function showFatal(msg) {
+  const app = document.getElementById("app");
+  if (app && !app.innerHTML.trim()) {
+    app.innerHTML = '<main class="card auth-card"><h1>Erro ao carregar</h1><p class="sub muted" id="fatal"></p></main>';
+    document.body.classList.add("auth-mode");
+    document.getElementById("fatal").textContent = msg || "Erro desconhecido";
+  }
+}
+window.addEventListener("error", (e) => showFatal(e.message));
+window.addEventListener("unhandledrejection", (e) => showFatal(e.reason && e.reason.message));
+
 /* ==========================================================
    InLog — ficheiro único (HTML + CSS + JS)
    1. Configuração   2. Utilitários   3. Camada de dados (api)
