@@ -304,6 +304,11 @@ window.addEventListener("unhandledrejection", (e) => showFatal(e.reason && e.rea
 const SUPABASE_URL = "https://qqsyjrjrqkmfynmaudfo.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_aCtA-XL_1p2DLPW05-fz7A_YK_gx7-m";
 const CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+/* Chamadas de voz — servidor TURN próprio (Coturn).
+   Depois de instalar o Coturn na tua VPS (script coturn-setup.sh), preenche as 3 linhas abaixo. */
+const COTURN = { host: "", user: "", pass: "" };   // ex.: host "203.0.113.10" (IP ou domínio da VPS)
+const TURN_SERVERS = COTURN.host ? [{ urls: [`turn:${COTURN.host}:3478?transport=udp`, `turn:${COTURN.host}:3478?transport=tcp`], username: COTURN.user, credential: COTURN.pass }] : [];
 const sb = CONFIGURED ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 /* ---------- 2. UTILITÁRIOS ---------- */
@@ -596,7 +601,7 @@ async function viewFeed() {
     if (!posts.length) feed.append(html('<div class="card empty">Ainda não há publicações. Escreve a primeira!</div>'));
     posts.forEach((p) => feed.append(postEl(p, me.id)));
   };
-  afterPublish = load; load();
+  afterPublish = load; onLive = load; load();
   document.querySelectorAll(".tabs [data-t]").forEach((b) => (b.onclick = () => {
     tab = b.dataset.t; document.querySelectorAll(".tabs [data-t]").forEach((x) => x.classList.toggle("btn-primary", x === b)); load();
   }));
@@ -674,7 +679,7 @@ async function viewPerfil() {
     if (!posts.length) list.append(html('<div class="card empty">Ainda não publicaste nada.</div>'));
     posts.forEach((p) => list.append(postEl(p, me.id)));
   };
-  draw(); load(); afterPublish = load;
+  draw(); load(); afterPublish = load; onLive = load;
 
   const dlg = $("#edit-dialog");
   $("#edit-btn").onclick = () => { $("#e-name").value = prof.display_name || ""; $("#e-bio").value = prof.bio || ""; $("#e-avatar").value = ""; dlg.showModal(); };
@@ -727,8 +732,11 @@ async function viewUser(username) {
     <div class="profile-head"><span id="p-av"></span><div class="row-actions" id="p-actions"></div></div>
     <div class="profile-info"><h1 id="p-name"></h1><div class="muted" id="p-user"></div><p id="p-bio"></p><div class="profile-stats" id="p-stats"></div></div>
     <div id="p-posts" class="feed"></div></main>`);
-  $("#p-av").append(avatar(name, prof.avatar_url, "lg"));
-  $("#p-name").textContent = name; $("#p-user").textContent = "@" + prof.username; $("#p-bio").textContent = prof.bio || "";
+  const drawHead = (p) => {
+    $("#p-av").replaceChildren(avatar(p.display_name || p.username, p.avatar_url, "lg"));
+    $("#p-name").textContent = p.display_name || p.username; $("#p-user").textContent = "@" + p.username; $("#p-bio").textContent = p.bio || "";
+  };
+  drawHead(prof);
 
   const paint = async () => {
     const [following, fr] = await Promise.all([api.isFollowing(me.id, prof.id), api.friendship(me.id, prof.id)]);
@@ -749,9 +757,13 @@ async function viewUser(username) {
     statsInto($("#p-stats"), prof.id);
   };
   paint();
-  const posts = await safe(() => api.posts(me.id, prof.id)) || [], list = $("#p-posts");
-  if (!posts.length) list.append(html('<div class="card empty">Ainda não há publicações.</div>'));
-  posts.forEach((p) => list.append(postEl(p, me.id)));
+  const loadPosts = async () => {
+    const posts = await safe(() => api.posts(me.id, prof.id)) || [], list = $("#p-posts"); if (!list) return; list.replaceChildren();
+    if (!posts.length) list.append(html('<div class="card empty">Ainda não há publicações.</div>'));
+    posts.forEach((p) => list.append(postEl(p, me.id)));
+  };
+  onLive = async (t) => { if (t === "profiles") { const fresh = await api.profileByUsername(username); if (fresh && $("#p-av")) drawHead(fresh); } loadPosts(); };
+  loadPosts();
 }
 
 /* ---- Amigos: procurar pessoas, pedidos e lista ---- */
@@ -901,6 +913,11 @@ async function viewComunidade(arg) {
     <div class="row-actions" id="c-actions" style="justify-content:flex-start"></div><div class="tabs chans" id="c-chans"></div><div class="card chan-host" id="c-chat"></div></main>`, false);
   $("#c-ic").append(avatar(c.name, c.icon_url, "md")); $("#c-name").textContent = (c.is_private ? "🔒 " : "") + c.name;
   $("#c-desc").textContent = `${c.community_members.length} membros${c.description ? " · " + c.description : ""}`;
+  onLive = async (t) => {   // foto/nome da comunidade mudaram
+    if (t !== "communities") return; const f = await api.community(id); if (!f || !$("#c-ic")) return;
+    $("#c-ic").replaceChildren(avatar(f.name, f.icon_url, "md")); $("#c-name").textContent = (f.is_private ? "🔒 " : "") + f.name;
+    $("#c-desc").textContent = `${f.community_members.length} membros${f.description ? " · " + f.description : ""}`;
+  };
   const acts = [];
   if (!mine) acts.push({ label: "Entrar", primary: true, fn: async () => { await api.joinCommunity(c.id); router(); } });
   else if (c.created_by !== me.id) acts.push({ label: "Sair", fn: async () => { if (confirm("Sair desta comunidade?")) { await api.leaveCommunity(c.id, me.id); router(); } } });
@@ -1034,8 +1051,10 @@ async function viewDefinicoes() {
 /* ---------- Notificações e chamadas de voz (WebRTC, 1 para 1) ----------
    O sinal para tocar/atender passa pelo Realtime do Supabase; o áudio vai
    diretamente entre os dois navegadores. Usa só servidores STUN públicos. */
+let liveChannel = null, onLive = null, liveTimer = null;
+const pokeLive = (table) => { clearTimeout(liveTimer); liveTimer = setTimeout(() => onLive && onLive(table), 500); };   // evita recarregar em rajada
 let ME = null, msgChannel = null, myCallChannel = null, call = null, incoming = null, callTick = null;
-const ICE = { iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }] };
+const ICE = { iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }, ...TURN_SERVERS], iceCandidatePoolSize: 2 };
 
 function systemNotify(title, body, hash, icon) {
   if (!("Notification" in window) || Notification.permission !== "granted" || !document.hidden) return;
@@ -1050,25 +1069,43 @@ function startListeners(myId) {
     const p = await safe(() => api.profile(m.sender_id)), name = (p && (p.display_name || p.username)) || "Nova mensagem";
     toast(`${name}: ${m.content.slice(0, 60)}`); systemNotify(name, m.content, "#/chat/" + m.conversation_id, p && p.avatar_url);
   }).subscribe();
+  // Tempo real: o que os outros fazem (publicar, apagar, gostos, mudar de foto) aparece sem recarregar
+  if (!liveChannel) liveChannel = sb.channel("live")
+    .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, (pl) => { if (!(pl.new && pl.new.user_id === myId)) pokeLive("posts"); })
+    .on("postgres_changes", { event: "*", schema: "public", table: "likes" }, (pl) => { if (!(pl.new && pl.new.user_id === myId)) pokeLive("likes"); })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (pl) => { if (pl.new.id !== myId) pokeLive("profiles"); })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "communities" }, () => pokeLive("communities"))
+    .subscribe();
   if (!myCallChannel) myCallChannel = sb.channel("calls:" + myId).on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload, myId)).subscribe();
 }
 function stopListeners() {
-  for (const k of ["msgChannel", "myCallChannel"]) { const ch = k === "msgChannel" ? msgChannel : myCallChannel; if (ch) sb.removeChannel(ch); }
-  msgChannel = myCallChannel = null; ME = null; if (call) endCall(false);
+  for (const ch of [msgChannel, myCallChannel, liveChannel]) if (ch) sb.removeChannel(ch);
+  msgChannel = myCallChannel = liveChannel = null; onLive = null; ME = null; if (call) endCall(false);
 }
 
 const openOut = (peerId) => new Promise((res) => { const ch = sb.channel("calls:" + peerId); ch.subscribe((st) => st === "SUBSCRIBED" && res(ch)); });
 const sig = (payload) => call && call.out.send({ type: "broadcast", event: "signal", payload: { ...payload, from: call.me } });
-const getMic = async () => { try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { toast("Sem acesso ao microfone. Permite-o nas definições do site."); return null; } };
+const getMic = async () => {
+  try { return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (e) { toast(e.name === "NotFoundError" ? "Nenhum microfone encontrado." : "Sem acesso ao microfone. Permite-o nas definições do site."); return null; }
+};
+/* Se o áudio não ligar em 20 s, avisa em vez de ficar calado */
+function failIfNotConnected() {
+  if (!call) return; clearTimeout(call.timeout);
+  call.timeout = setTimeout(() => { if (call && call.state !== "live") { toast("Não foi possível ligar o áudio. A rede pode precisar de um servidor TURN."); endCall(true); } }, 20000);
+}
 
 function setupPC() {
   const pc = (call.pc = new RTCPeerConnection(ICE));
   call.stream.getTracks().forEach((t) => pc.addTrack(t, call.stream));
   pc.onicecandidate = (e) => e.candidate && sig({ type: "ice", candidate: e.candidate });
-  pc.ontrack = (e) => { const a = $("#remote-audio"); a.srcObject = e.streams[0]; a.play().catch(() => {}); };
+  pc.ontrack = (e) => {   // áudio recebido → altifalante
+    const a = $("#remote-audio"); a.srcObject = e.streams[0] || new MediaStream([e.track]); a.muted = false; a.volume = 1; a.play().catch(() => {});
+  };
   pc.onconnectionstatechange = () => {
+    if (!call) return;
     if (pc.connectionState === "connected") { call.state = "live"; call.t0 = Date.now(); clearTimeout(call.timeout); showCallUI(); }
-    if (pc.connectionState === "failed") { toast("A ligação falhou (a rede pode bloquear chamadas)."); endCall(false); }
+    if (pc.connectionState === "failed") { toast("A ligação falhou. A rede pode precisar de um servidor TURN."); endCall(true); }
   };
 }
 
@@ -1086,12 +1123,12 @@ async function acceptCall() {
   const inc = incoming, stream = await getMic();
   if (!stream) return declineCall();
   incoming = null; $("#incoming").classList.add("hidden");
-  call = { me: ME.id, peer: { id: inc.from, name: inc.name }, stream, state: "live", pending: [] };
+  call = { me: ME.id, peer: { id: inc.from, name: inc.name }, stream, state: "connecting", pending: [] };
   call.out = await openOut(inc.from); setupPC();
   await call.pc.setRemoteDescription(inc.sdp);
   for (const c of inc.ice) await call.pc.addIceCandidate(c);
   const ans = await call.pc.createAnswer(); await call.pc.setLocalDescription(ans);
-  sig({ type: "answer", sdp: ans }); showCallUI();
+  sig({ type: "answer", sdp: ans }); showCallUI(); failIfNotConnected();
 }
 async function declineCall() {
   const inc = incoming; incoming = null; $("#incoming").classList.add("hidden"); if (!inc) return;
@@ -1108,7 +1145,7 @@ function endCall(notify) {
 function showCallUI() {
   if (!call) return; $("#call-ui").classList.remove("hidden");
   const paint = () => { if (!call) return; const s = call.t0 ? Math.floor((Date.now() - call.t0) / 1000) : 0;
-    $("#call-text").textContent = call.state === "live" ? `📞 ${call.peer.name} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `A chamar ${call.peer.name}…`; };
+    $("#call-text").textContent = call.state === "live" ? `📞 ${call.peer.name} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : call.state === "calling" ? `A chamar ${call.peer.name}…` : `A ligar o áudio com ${call.peer.name}…`; };
   paint(); clearInterval(callTick); callTick = setInterval(paint, 1000);
 }
 
@@ -1125,6 +1162,7 @@ async function onSignal(m, myId) {
     if (call && call.peer.id === m.from) { if (call.pc.remoteDescription) call.pc.addIceCandidate(m.candidate).catch(() => {}); else call.pending.push(m.candidate); }
     else if (incoming && incoming.from === m.from) incoming.ice.push(m.candidate);
   } else if (m.type === "answer" && call && call.peer.id === m.from) {
+    call.state = "connecting"; failIfNotConnected(); showCallUI();
     await call.pc.setRemoteDescription(m.sdp); for (const c of call.pending) await call.pc.addIceCandidate(c).catch(() => {}); call.pending = [];
   } else if (m.type === "hangup" || m.type === "decline") {
     if (incoming && incoming.from === m.from) { incoming = null; $("#incoming").classList.add("hidden"); toast("Chamada perdida"); }
@@ -1166,7 +1204,7 @@ async function router() {
   const pend = user && localStorage.getItem("inlog_invite");
   if (pend) { localStorage.removeItem("inlog_invite"); return (location.hash = "#/convite/" + pend); }
   if (user) { if (!ME) ME = await safe(() => api.profile(user.id)); startListeners(user.id); }
-  composerCommunity = null; window.scrollTo(0, 0);
+  composerCommunity = null; onLive = null; window.scrollTo(0, 0);
   await safe(() => (routes[key] || viewFeed)(decodeURIComponent(arg)));
 }
 window.addEventListener("hashchange", router);
