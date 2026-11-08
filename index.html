@@ -173,6 +173,24 @@ body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; pad
 #img-preview img { width: 100%; max-height: 240px; object-fit: cover; border-radius: var(--r-md); }
 #img-preview .btn { position: absolute; top: 8px; right: 8px; padding: 5px 12px; font-size: 13px; background: rgba(13,15,20,.85); }
 .post.removing { opacity: 0; transform: scale(.98); transition: .25s var(--ease); }
+.page { max-width: 680px; margin: 0 auto; padding: 20px 16px 90px; display: grid; gap: 14px; align-content: start; }
+.ptitle { font-size: 22px; } .ptitle-row { display: flex; justify-content: space-between; align-items: center; }
+.tabs { display: flex; gap: 6px; }
+.list-item .grow { flex: 1; min-width: 0; } .list-item .grow > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-item.link .grow { cursor: pointer; }
+.row-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.row-actions .btn { margin-left: 0; padding: 6px 14px; font-size: 13px; }
+.profile-stats { flex-wrap: wrap; }
+.checks { display: grid; gap: 4px; max-height: 220px; overflow-y: auto; }
+.check { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; }
+.chat { max-width: 680px; margin: 0 auto; height: calc(100dvh - 62px); display: flex; flex-direction: column; padding: 0 16px; }
+.chat-head { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.chat-head .btn { padding: 6px 14px; } .chat-head b { flex: 1; font-size: 17px; }
+.msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 14px 0; }
+.msg { max-width: 80%; padding: 8px 13px; border-radius: 16px; background: var(--surface-2); align-self: flex-start; overflow-wrap: anywhere; animation: enter .2s var(--ease) both; }
+.msg.me { align-self: flex-end; background: var(--accent); color: #12102a; }
+.msg small { display: block; font-size: 11px; color: var(--muted); }
+.chat-form { display: flex; gap: 8px; padding: 12px 0 14px; }
 </style>
 </head>
 <body>
@@ -198,6 +216,22 @@ body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; pad
   <div class="field"><label for="e-name">Nome de apresentação</label><input class="input" id="e-name" maxlength="40"></div>
   <div class="field"><label for="e-bio">Biografia</label><textarea class="input" id="e-bio" maxlength="160"></textarea></div>
   <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-primary" value="ok">Guardar</button></div>
+</form></dialog>
+
+<!-- Diálogo: novo grupo -->
+<dialog id="group-dialog"><form method="dialog">
+  <h2>Novo grupo</h2>
+  <div class="field"><label for="g-name">Nome do grupo</label><input class="input" id="g-name" maxlength="40"></div>
+  <div class="field"><label>Membros (os teus amigos)</label><div id="g-members" class="checks"></div></div>
+  <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-primary" value="ok">Criar</button></div>
+</form></dialog>
+
+<!-- Diálogo: nova comunidade -->
+<dialog id="comm-dialog"><form method="dialog">
+  <h2>Nova comunidade</h2>
+  <div class="field"><label for="cm-name">Nome</label><input class="input" id="cm-name" maxlength="40"></div>
+  <div class="field"><label for="cm-desc">Descrição</label><textarea class="input" id="cm-desc" maxlength="200" style="min-height:80px"></textarea></div>
+  <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-primary" value="ok">Criar</button></div>
 </form></dialog>
 
 <div class="toast" id="toast"></div>
@@ -271,7 +305,7 @@ function resizeImage(file, max = 1600) {
 }
 
 /* Executa uma ação e mostra o erro num aviso em vez de partir a app */
-async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message || "Algo correu mal."); } }
+async function safe(fn) { try { return await fn(); } catch (e) { toast(/row-level security/i.test(e.message || "") ? "Não tens permissão para fazer isto." : e.message || "Algo correu mal."); } }
 
 /* ---------- 3. CAMADA DE DADOS ----------
    Toda a comunicação com o Supabase passa por este objeto `api`. */
@@ -295,20 +329,25 @@ const liveApi = {
     }
     const { error } = await sb.from("profiles").update(fields).eq("id", id); if (error) throw error;
   },
-  async posts(myId, userId) {
+  async posts(myId, userId, opts = {}) {
     let q = sb.from("posts").select("id,content,created_at,user_id,image_url,profiles!posts_user_id_fkey(username,display_name,avatar_url),likes(user_id)").order("created_at", { ascending: false }).limit(50);
     if (userId) q = q.eq("user_id", userId);
+    if (opts.communityId) q = q.eq("community_id", opts.communityId); else q = q.is("community_id", null);
+    if (opts.following) { // só quem eu sigo (e eu)
+      const { data: f } = await sb.from("follows").select("following_id").eq("follower_id", myId);
+      q = q.in("user_id", (f || []).map((x) => x.following_id).concat(myId));
+    }
     const { data, error } = await q; if (error) throw error;
     return data.map((r) => ({ id: r.id, userId: r.user_id, text: r.content, image: r.image_url, time: r.created_at, name: r.profiles.display_name || r.profiles.username, username: r.profiles.username, avatar: r.profiles.avatar_url, likes: r.likes.length, liked: r.likes.some((l) => l.user_id === myId) }));
   },
-  async createPost(text, file) {
+  async createPost(text, file, communityId) {
     const { data: ses } = await sb.auth.getSession(); const uid = ses.session.user.id; let image_url = null;
     if (file) { // imagem → Storage (bucket "post-images", pasta = id do utilizador)
       const blob = await resizeImage(file), path = `${uid}/${Date.now()}.jpg`;
       const up = await sb.storage.from("post-images").upload(path, blob, { contentType: "image/jpeg" }); if (up.error) throw up.error;
       image_url = sb.storage.from("post-images").getPublicUrl(path).data.publicUrl;
     }
-    const { error } = await sb.from("posts").insert({ content: text, image_url }); if (error) throw error;
+    const { error } = await sb.from("posts").insert({ content: text, image_url, community_id: communityId || null }); if (error) throw error;
   },
   async deletePost(p) {
     const { error } = await sb.from("posts").delete().eq("id", p.id); if (error) throw error;
@@ -320,6 +359,63 @@ const liveApi = {
     if (error) throw error;
   },
   async suggestions(myId) { const { data } = await sb.from("profiles").select("id,username,display_name,avatar_url").neq("id", myId).limit(3); return data || []; },
+
+  /* ----- Perfis, seguir e amizades ----- */
+  async profileByUsername(u) { const { data } = await sb.from("profiles").select("*").eq("username", u).maybeSingle(); return data; },
+  async searchProfiles(q, myId) {
+    const t = q.replace(/[%,()]/g, "");
+    const { data, error } = await sb.from("profiles").select("id,username,display_name,avatar_url").or(`username.ilike.%${t}%,display_name.ilike.%${t}%`).neq("id", myId).limit(20);
+    if (error) throw error; return data;
+  },
+  async isFollowing(myId, id) { const { data } = await sb.from("follows").select("follower_id").match({ follower_id: myId, following_id: id }).maybeSingle(); return !!data; },
+  async follow(id) { const { error } = await sb.from("follows").insert({ following_id: id }); if (error) throw error; },
+  async unfollow(myId, id) { const { error } = await sb.from("follows").delete().match({ follower_id: myId, following_id: id }); if (error) throw error; },
+  async stats(id) {
+    const head = { count: "exact", head: true }, c = (q) => q.then((r) => r.count || 0);
+    const [posts, followers, following, friends] = await Promise.all([
+      c(sb.from("posts").select("id", head).eq("user_id", id).is("community_id", null)),
+      c(sb.from("follows").select("follower_id", head).eq("following_id", id)),
+      c(sb.from("follows").select("follower_id", head).eq("follower_id", id)),
+      c(sb.from("friendships").select("id", head).eq("status", "accepted").or(`requester_id.eq.${id},addressee_id.eq.${id}`)),
+    ]);
+    return { posts, followers, following, friends };
+  },
+  async friendship(a, b) { const { data } = await sb.from("friendships").select("*").or(`and(requester_id.eq.${a},addressee_id.eq.${b}),and(requester_id.eq.${b},addressee_id.eq.${a})`).maybeSingle(); return data; },
+  async sendRequest(id) { const { error } = await sb.from("friendships").insert({ addressee_id: id }); if (error) throw error; },
+  async acceptRequest(fid) { const { error } = await sb.from("friendships").update({ status: "accepted" }).eq("id", fid); if (error) throw error; },
+  async deleteFriendship(fid) { const { error } = await sb.from("friendships").delete().eq("id", fid); if (error) throw error; },
+  async friends(myId) {
+    const P = "id,username,display_name,avatar_url";
+    const { data, error } = await sb.from("friendships").select(`id,status,requester_id,addressee_id,requester:profiles!friendships_requester_id_fkey(${P}),addressee:profiles!friendships_addressee_id_fkey(${P})`).or(`requester_id.eq.${myId},addressee_id.eq.${myId}`);
+    if (error) throw error;
+    return data.map((r) => ({ fid: r.id, status: r.status, incoming: r.addressee_id === myId, other: r.requester_id === myId ? r.addressee : r.requester }));
+  },
+
+  /* ----- Conversas privadas e grupos ----- */
+  async conversations(myId) {
+    const { data, error } = await sb.from("conversation_members").select("conversations(id,type,name,last_message_at)").eq("user_id", myId);
+    if (error) throw error;
+    const convs = data.map((r) => r.conversations).sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
+    if (!convs.length) return [];
+    const { data: mem } = await sb.from("conversation_members").select("conversation_id,profiles(id,username,display_name,avatar_url)").in("conversation_id", convs.map((c) => c.id));
+    return convs.map((c) => ({ ...c, members: mem.filter((m) => m.conversation_id === c.id).map((m) => m.profiles) }));
+  },
+  async conversation(id, myId) { return (await liveApi.conversations(myId)).find((c) => String(c.id) === String(id)); },
+  async startDM(other) { const { data, error } = await sb.rpc("start_dm", { other }); if (error) throw error; return data; },
+  async createGroup(name, ids) { const { data, error } = await sb.rpc("create_group", { group_name: name, member_ids: ids }); if (error) throw error; return data; },
+  async leaveConversation(id, myId) { const { error } = await sb.from("conversation_members").delete().match({ conversation_id: id, user_id: myId }); if (error) throw error; },
+  async messages(id) { const { data, error } = await sb.from("messages").select("id,sender_id,content,created_at").eq("conversation_id", id).order("created_at").limit(200); if (error) throw error; return data; },
+  async sendMessage(id, text) { const { error } = await sb.from("messages").insert({ conversation_id: id, content: text }); if (error) throw error; },
+
+  /* ----- Comunidades ----- */
+  async communities() { const { data, error } = await sb.from("communities").select("id,name,description,community_members(user_id)").order("created_at", { ascending: false }); if (error) throw error; return data; },
+  async community(id) { const { data } = await sb.from("communities").select("id,name,description,community_members(user_id)").eq("id", id).maybeSingle(); return data; },
+  async createCommunity(name, description) {
+    const { data, error } = await sb.from("communities").insert({ name, description }).select("id").single(); if (error) throw error;
+    await liveApi.joinCommunity(data.id); return data.id;
+  },
+  async joinCommunity(id) { const { error } = await sb.from("community_members").insert({ community_id: id }); if (error) throw error; },
+  async leaveCommunity(id, myId) { const { error } = await sb.from("community_members").delete().match({ community_id: id, user_id: myId }); if (error) throw error; },
 };
 
 const api = liveApi;
@@ -340,7 +436,7 @@ function postEl(p, myId) {
     <div class="post-head"><b></b><span class="muted"></span></div><p class="post-text"></p><img class="post-img hidden" alt="" loading="lazy">
     <div class="actions"><button class="act like"><span class="heart">♥</span> <span class="n"></span></button><button class="act del hidden" aria-label="Apagar publicação">🗑 Apagar</button></div></div></article>`);
   el.prepend(avatar(p.name, p.avatar));
-  $("b", el).textContent = p.name;
+  $("b", el).textContent = p.name; $("b", el).style.cursor = "pointer"; $("b", el).onclick = () => (location.hash = "#/u/" + p.username);
   $(".muted", el).textContent = `@${p.username} · ${timeAgo(p.time)}`;
   $(".post-text", el).textContent = p.text;
   if (p.image) { const im = $(".post-img", el); im.src = p.image; im.classList.remove("hidden"); }
@@ -370,14 +466,14 @@ function headerHTML(page) {
   return `<header class="header"><div class="header-in">
     <a href="#/" class="logo">${LOGO}<span>InLog</span></a>
     <button class="burger" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
-    <nav class="nav">${a("#/", "Início", "home")}${a("#/perfil", "Perfil", "perfil")}<a href="#" id="logout">Sair</a>
+    <nav class="nav">${a("#/", "Início", "home")}${a("#/amigos", "Amigos", "amigos")}${a("#/mensagens", "Mensagens", "mensagens")}${a("#/comunidades", "Comunidades", "comunidades")}${a("#/perfil", "Perfil", "perfil")}<a href="#" id="logout">Sair</a>
     <a href="#" class="btn btn-primary" data-open-composer>Publicar</a></nav></div></header>`;
 }
 
 /* Monta uma página com header; liga menu móvel e botão Sair */
-function mountPage(page, mainHTML) {
+function mountPage(page, mainHTML, fab = true) {
   document.body.classList.remove("auth-mode");
-  const app = $("#app"); app.innerHTML = headerHTML(page) + mainHTML + `<button class="fab" data-open-composer aria-label="Nova publicação">+</button>`;
+  const app = $("#app"); app.innerHTML = headerHTML(page) + mainHTML + (fab ? `<button class="fab" data-open-composer aria-label="Nova publicação">+</button>` : "");
   const burger = $(".burger"), nav = $(".nav");
   burger.onclick = () => burger.setAttribute("aria-expanded", nav.classList.toggle("open"));
   $("#logout").onclick = async (e) => { e.preventDefault(); await safe(() => api.signOut()); location.hash = "#/login"; };
@@ -385,6 +481,7 @@ function mountPage(page, mainHTML) {
 
 /* Diálogo de publicar: a vista atual define o que fazer depois de publicar */
 let afterPublish = () => {};
+let composerCommunity = null;   // preenchido quando se publica dentro de uma comunidade
 (function wireComposer() {
   const dlg = $("#composer-dialog"), ta = $("textarea", dlg), fileIn = $("#p-image"), prev = $("#img-preview");
   let file = null;
@@ -404,7 +501,7 @@ let afterPublish = () => {};
     const text = ta.value.trim();
     if (!text && !file) { e.preventDefault(); return toast("Escreve algo ou adiciona uma imagem."); }
     toast("A publicar…");
-    const ok = await safe(async () => { await api.createPost(text, file); return true; });
+    const ok = await safe(async () => { await api.createPost(text, file, composerCommunity); return true; });
     if (ok) { ta.value = ""; $(".counter", dlg).textContent = "0/280"; clearImg(); toast("Publicado"); afterPublish(); }
   });
 })();
@@ -415,6 +512,7 @@ async function viewFeed() {
   mountPage("home", `<main class="layout">
     <aside class="side side-left"><div class="card user-card" id="user-card"></div></aside>
     <section class="feed">
+      <div class="tabs"><button class="btn btn-primary" data-t="all">Todos</button><button class="btn" data-t="following">A seguir</button></div>
       <button class="card composer" data-open-composer><span id="me-av"></span>O que estás a pensar?</button>
       <div id="feed" class="feed"></div></section>
     <aside class="side side-right"><div class="card" id="suggestions"><h3>Pessoas a seguir</h3></div></aside></main>`);
@@ -424,12 +522,16 @@ async function viewFeed() {
   $("h3", card).textContent = prof.display_name || prof.username; $(".muted", card).textContent = "@" + prof.username;
   $("#me-av").replaceWith(avatar(prof.display_name || prof.username, prof.avatar_url));
 
+  let tab = "all";
   const load = async () => {
-    const posts = await safe(() => api.posts(me.id)) || [], feed = $("#feed"); feed.replaceChildren();
+    const posts = await safe(() => api.posts(me.id, null, { following: tab === "following" })) || [], feed = $("#feed"); feed.replaceChildren();
     if (!posts.length) feed.append(html('<div class="card empty">Ainda não há publicações. Escreve a primeira!</div>'));
     posts.forEach((p) => feed.append(postEl(p, me.id)));
   };
   afterPublish = load; load();
+  document.querySelectorAll(".tabs [data-t]").forEach((b) => (b.onclick = () => {
+    tab = b.dataset.t; document.querySelectorAll(".tabs [data-t]").forEach((x) => x.classList.toggle("btn-primary", x === b)); load();
+  }));
 
   const people = await api.suggestions(me.id);
   if (!people.length) $("#suggestions").classList.add("hidden");
@@ -437,7 +539,11 @@ async function viewFeed() {
     const row = html(`<div class="list-item"><div><b></b><div class="muted"></div></div><button class="btn">Seguir</button></div>`);
     row.prepend(avatar(s.display_name || s.username, s.avatar_url));
     $("b", row).textContent = s.display_name || s.username; $(".muted", row).textContent = "@" + s.username;
-    $(".btn", row).onclick = (e) => (e.target.textContent = "A seguir");   // visual por agora
+    $("b", row).style.cursor = "pointer"; $("b", row).onclick = () => (location.hash = "#/u/" + s.username);
+    $(".btn", row).onclick = async (e) => {
+      const ok = await safe(async () => { await api.follow(s.id); return true; });
+      if (ok) { e.target.textContent = "A seguir ✓"; e.target.disabled = true; }
+    };
     $("#suggestions").append(row);
   }
 }
@@ -487,7 +593,7 @@ async function viewPerfil() {
   mountPage("perfil", `<main class="profile"><div class="cover"></div>
     <div class="profile-head"><span id="p-av"></span><button class="btn" id="edit-btn">Editar perfil</button></div>
     <div class="profile-info"><h1 id="p-name"></h1><div class="muted" id="p-user"></div><p id="p-bio"></p>
-    <div class="profile-stats"><div><b id="p-count">0</b> <span class="muted">publicações</span></div></div></div>
+    <div class="profile-stats" id="p-stats"></div></div>
     <div id="p-posts" class="feed"></div></main>`);
 
   const draw = () => {
@@ -496,7 +602,7 @@ async function viewPerfil() {
   };
   const load = async () => {
     const posts = await safe(() => api.posts(me.id, me.id)) || [], list = $("#p-posts"); list.replaceChildren();
-    $("#p-count").textContent = posts.length;
+    statsInto($("#p-stats"), me.id);
     if (!posts.length) list.append(html('<div class="card empty">Ainda não publicaste nada.</div>'));
     posts.forEach((p) => list.append(postEl(p, me.id)));
   };
@@ -519,8 +625,206 @@ async function viewPerfil() {
 /* ---------- 6. ROUTER E ARRANQUE ----------
    Usamos rotas com # (ex.: #/perfil) porque o GitHub Pages só serve
    ficheiros estáticos: assim não há erros 404 ao recarregar a página. */
-const routes = { "/": viewFeed, "/login": viewLogin, "/registo": viewRegisto, "/perfil": viewPerfil };
-const PROTECTED = ["/", "/perfil"];
+/* ---- Utilitários das novas vistas ---- */
+/* Linha de lista (pessoa, conversa, comunidade) com ações opcionais */
+function listRow(p, sub, href, actions = []) {
+  const name = p.display_name || p.username || p.name;
+  const el = html(`<div class="list-item"><div class="grow"><b></b><div class="muted"></div></div><div class="row-actions"></div></div>`);
+  el.prepend(avatar(name, p.avatar_url));
+  $("b", el).textContent = name; $(".muted", el).textContent = sub;
+  if (href) { el.classList.add("link"); $(".grow", el).onclick = () => (location.hash = href); }
+  for (const a of actions) {
+    const b = html(`<button class="btn${a.primary ? " btn-primary" : ""}"></button>`); b.textContent = a.label;
+    b.onclick = async () => { b.disabled = true; await safe(a.fn); b.disabled = false; };
+    $(".row-actions", el).append(b);
+  }
+  return el;
+}
+const note = (t) => html(`<p class="muted">${t}</p>`);
+
+async function statsInto(el, id) {
+  const st = await safe(() => api.stats(id)); if (!st || !el) return;
+  const it = (n, l) => `<div><b>${n}</b> <span class="muted">${l}</span></div>`;
+  el.innerHTML = it(st.posts, "publicações") + it(st.followers, "seguidores") + it(st.following, "a seguir") + it(st.friends, "amigos");
+}
+
+/* ---- Perfil de outra pessoa: seguir, amizade e mensagem ---- */
+async function viewUser(username) {
+  const me = await api.me(), prof = await api.profileByUsername(username);
+  if (!prof) return mountPage("", '<main class="page"><div class="card empty">Utilizador não encontrado.</div></main>');
+  if (prof.id === me.id) return viewPerfil();
+  const name = prof.display_name || prof.username;
+  mountPage("", `<main class="profile"><div class="cover"></div>
+    <div class="profile-head"><span id="p-av"></span><div class="row-actions" id="p-actions"></div></div>
+    <div class="profile-info"><h1 id="p-name"></h1><div class="muted" id="p-user"></div><p id="p-bio"></p><div class="profile-stats" id="p-stats"></div></div>
+    <div id="p-posts" class="feed"></div></main>`);
+  $("#p-av").append(avatar(name, prof.avatar_url, "lg"));
+  $("#p-name").textContent = name; $("#p-user").textContent = "@" + prof.username; $("#p-bio").textContent = prof.bio || "";
+
+  const paint = async () => {
+    const [following, fr] = await Promise.all([api.isFollowing(me.id, prof.id), api.friendship(me.id, prof.id)]);
+    const acts = $("#p-actions"); if (!acts) return; acts.replaceChildren();
+    const add = (label, fn, primary) => {
+      const b = html(`<button class="btn${primary ? " btn-primary" : ""}"></button>`); b.textContent = label;
+      b.onclick = async () => { b.disabled = true; await safe(fn); paint(); }; acts.append(b);
+    };
+    add(following ? "A seguir ✓" : "Seguir", () => (following ? api.unfollow(me.id, prof.id) : api.follow(prof.id)), !following);
+    if (!fr) add("Adicionar amigo", () => api.sendRequest(prof.id));
+    else if (fr.status === "pending") {
+      if (fr.requester_id === me.id) add("Pedido enviado ✕", () => api.deleteFriendship(fr.id));
+      else add("Aceitar pedido", () => api.acceptRequest(fr.id), true);
+    } else {
+      add("Mensagem", async () => { location.hash = "#/chat/" + (await api.startDM(prof.id)); }, true);
+      add("Amigos ✓", async () => { if (confirm("Remover dos amigos?")) await api.deleteFriendship(fr.id); });
+    }
+    statsInto($("#p-stats"), prof.id);
+  };
+  paint();
+  const posts = await safe(() => api.posts(me.id, prof.id)) || [], list = $("#p-posts");
+  if (!posts.length) list.append(html('<div class="card empty">Ainda não há publicações.</div>'));
+  posts.forEach((p) => list.append(postEl(p, me.id)));
+}
+
+/* ---- Amigos: procurar pessoas, pedidos e lista ---- */
+async function viewAmigos() {
+  const me = await api.me();
+  mountPage("amigos", `<main class="page"><h2 class="ptitle">Amigos</h2>
+    <div class="card"><input class="input" id="q" placeholder="Procurar pessoas por nome ou @utilizador…"><div id="results"></div></div>
+    <div class="card hidden" id="req-card"><h3>Pedidos de amizade</h3><div id="reqs"></div></div>
+    <div class="card"><h3>Os teus amigos</h3><div id="friends"></div></div></main>`);
+  const load = async () => {
+    const rows = await safe(() => api.friends(me.id)) || [];
+    const reqs = rows.filter((r) => r.status === "pending" && r.incoming), fr = rows.filter((r) => r.status === "accepted");
+    $("#req-card").classList.toggle("hidden", !reqs.length);
+    $("#reqs").replaceChildren(...reqs.map((r) => listRow(r.other, "@" + r.other.username, "#/u/" + r.other.username, [
+      { label: "Aceitar", primary: true, fn: async () => { await api.acceptRequest(r.fid); load(); } },
+      { label: "Recusar", fn: async () => { await api.deleteFriendship(r.fid); load(); } }])));
+    $("#friends").replaceChildren(...(fr.length ? fr.map((r) => listRow(r.other, "@" + r.other.username, "#/u/" + r.other.username, [
+      { label: "Mensagem", primary: true, fn: async () => { location.hash = "#/chat/" + (await api.startDM(r.other.id)); } }])) : [note("Ainda não tens amigos. Procura pessoas acima!")]));
+  };
+  load();
+  let t;
+  $("#q").oninput = (e) => {
+    clearTimeout(t);
+    t = setTimeout(async () => {
+      const q = e.target.value.trim(), box = $("#results");
+      if (q.length < 2) return box.replaceChildren();
+      const res = await safe(() => api.searchProfiles(q, me.id)) || [];
+      box.replaceChildren(...(res.length ? res.map((p) => listRow(p, "@" + p.username, "#/u/" + p.username)) : [note("Ninguém encontrado.")]));
+    }, 300);
+  };
+}
+
+/* ---- Mensagens: lista de conversas e criação de grupos ---- */
+const convTitle = (c, myId) => (c.type === "group" ? c.name : (c.members.find((m) => m.id !== myId) || {}).display_name || (c.members.find((m) => m.id !== myId) || {}).username || "Conversa");
+
+async function viewMensagens() {
+  const me = await api.me();
+  mountPage("mensagens", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Mensagens</h2><button class="btn btn-primary" id="new-group">Novo grupo</button></div><div class="card" id="convs"></div></main>`);
+  const convs = await safe(() => api.conversations(me.id)) || [];
+  $("#convs").replaceChildren(...(convs.length ? convs.map((c) => {
+    const other = c.type === "dm" ? c.members.find((m) => m.id !== me.id) || {} : {};
+    return listRow({ name: convTitle(c, me.id), avatar_url: other.avatar_url }, c.type === "group" ? `Grupo · ${c.members.length} membros` : "Conversa privada", "#/chat/" + c.id);
+  }) : [note('Sem conversas ainda. Abre a página <a href="#/amigos" style="color:var(--accent)">Amigos</a> e envia uma mensagem a alguém.')]));
+
+  $("#new-group").onclick = async () => {
+    const fr = (await safe(() => api.friends(me.id)) || []).filter((r) => r.status === "accepted");
+    if (!fr.length) return toast("Precisas de amigos para criar um grupo.");
+    $("#g-members").replaceChildren(...fr.map((r) => {
+      const l = html('<label class="check"><input type="checkbox"><span></span></label>');
+      $("input", l).value = r.other.id; $("span", l).textContent = r.other.display_name || r.other.username; return l;
+    }));
+    $("#g-name").value = ""; $("#group-dialog").showModal();
+  };
+  $("#group-dialog form").onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok") return;
+    const gname = $("#g-name").value.trim(), ids = [...document.querySelectorAll("#g-members input:checked")].map((i) => i.value);
+    if (!gname || !ids.length) { e.preventDefault(); return toast("Dá um nome e escolhe pelo menos um amigo."); }
+    const id = await safe(() => api.createGroup(gname, ids)); if (id) location.hash = "#/chat/" + id;
+  };
+}
+
+/* ---- Conversa (privada ou grupo) com mensagens em tempo real ---- */
+let chatChannel = null;
+function stopChat() { if (chatChannel) { sb.removeChannel(chatChannel); chatChannel = null; } }
+
+async function viewChat(id) {
+  const me = await api.me(), conv = await api.conversation(id, me.id);
+  if (!conv) return mountPage("mensagens", '<main class="page"><div class="card empty">Conversa não encontrada.</div></main>', false);
+  const who = Object.fromEntries(conv.members.map((m) => [m.id, m]));
+  mountPage("mensagens", `<main class="chat"><div class="chat-head"><a href="#/mensagens" class="btn">←</a><b id="c-title"></b><button class="btn hidden" id="leave">Sair do grupo</button></div>
+    <div class="msgs" id="msgs"></div>
+    <form class="chat-form" id="chat-form"><input class="input" id="c-text" maxlength="1000" placeholder="Escreve uma mensagem…" autocomplete="off"><button class="btn btn-primary">Enviar</button></form></main>`, false);
+  $("#c-title").textContent = convTitle(conv, me.id);
+  if (conv.type === "group") {
+    $("#leave").classList.remove("hidden");
+    $("#leave").onclick = async () => { if (confirm("Sair deste grupo?")) { await safe(() => api.leaveConversation(id, me.id)); location.hash = "#/mensagens"; } };
+  }
+  const box = $("#msgs"), seen = new Set();
+  const add = (m) => {
+    if (seen.has(m.id)) return; seen.add(m.id);
+    const mine = m.sender_id === me.id, el = html('<div class="msg"><small></small><span></span></div>');
+    if (mine) el.classList.add("me");
+    if (mine || conv.type !== "group") $("small", el).remove(); else $("small", el).textContent = (who[m.sender_id] || {}).display_name || "Ex-membro";
+    $("span", el).textContent = m.content; box.append(el); box.scrollTop = box.scrollHeight;
+  };
+  const sync = async () => ((await safe(() => api.messages(id))) || []).forEach(add);
+  await sync();
+  // Tempo real: novas mensagens aparecem sem recarregar
+  chatChannel = sb.channel("chat-" + id).on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` }, (pl) => add(pl.new)).subscribe();
+  $("#chat-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const inp = $("#c-text"), text = inp.value.trim(); if (!text) return;
+    inp.value = ""; await safe(() => api.sendMessage(id, text)); setTimeout(sync, 700);   // plano B se o tempo real falhar
+  };
+}
+
+/* ---- Comunidades ---- */
+async function viewComunidades() {
+  const me = await api.me();
+  mountPage("comunidades", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Comunidades</h2><button class="btn btn-primary" id="new-comm">Criar</button></div><div class="card" id="comms"></div></main>`);
+  const load = async () => {
+    const list = await safe(() => api.communities()) || [];
+    $("#comms").replaceChildren(...(list.length ? list.map((c) => {
+      const joined = c.community_members.some((m) => m.user_id === me.id);
+      return listRow({ name: c.name }, `${c.community_members.length} membros${c.description ? " · " + c.description : ""}`, "#/c/" + c.id, [
+        { label: joined ? "Sair" : "Entrar", primary: !joined, fn: async () => { await (joined ? api.leaveCommunity(c.id, me.id) : api.joinCommunity(c.id)); load(); } }]);
+    }) : [note("Ainda não há comunidades. Cria a primeira!")]));
+  };
+  load();
+  $("#new-comm").onclick = () => { $("#cm-name").value = ""; $("#cm-desc").value = ""; $("#comm-dialog").showModal(); };
+  $("#comm-dialog form").onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok") return;
+    const cname = $("#cm-name").value.trim();
+    if (cname.length < 2) { e.preventDefault(); return toast("Dá um nome à comunidade."); }
+    const id = await safe(() => api.createCommunity(cname, $("#cm-desc").value.trim())); if (id) location.hash = "#/c/" + id;
+  };
+}
+
+async function viewComunidade(id) {
+  const me = await api.me();
+  if (!(await api.community(id))) return mountPage("comunidades", '<main class="page"><div class="card empty">Comunidade não encontrada.</div></main>');
+  composerCommunity = Number(id);   // o botão Publicar passa a publicar aqui dentro
+  mountPage("comunidades", `<main class="page"><div class="card"><h2 id="c-name"></h2><p class="muted" id="c-desc"></p><div class="row-actions" id="c-actions" style="margin:0"></div></div><div id="c-feed" class="feed"></div></main>`);
+  const paint = async () => {
+    const c = await api.community(id), joined = c.community_members.some((m) => m.user_id === me.id);
+    $("#c-name").textContent = c.name; $("#c-desc").textContent = `${c.community_members.length} membros${c.description ? " · " + c.description : ""}`;
+    const acts = $("#c-actions"); acts.replaceChildren();
+    const b = html(`<button class="btn${joined ? "" : " btn-primary"}"></button>`); b.textContent = joined ? "Sair da comunidade" : "Entrar";
+    b.onclick = async () => { await safe(() => (joined ? api.leaveCommunity(c.id, me.id) : api.joinCommunity(c.id))); paint(); }; acts.append(b);
+    if (joined) acts.append(html('<button class="btn btn-primary" data-open-composer>Publicar aqui</button>'));
+    const posts = await safe(() => api.posts(me.id, null, { communityId: c.id })) || [], feed = $("#c-feed"); feed.replaceChildren();
+    if (!posts.length) feed.append(html('<div class="card empty">Ainda não há publicações nesta comunidade.</div>'));
+    posts.forEach((p) => feed.append(postEl(p, me.id)));
+  };
+  afterPublish = paint; paint();
+}
+
+/* ---------- 6. ROUTER E ARRANQUE ----------
+   Rotas com # (ex.: #/u/maria) porque o GitHub Pages só serve ficheiros estáticos. */
+const routes = { "/": viewFeed, "/login": viewLogin, "/registo": viewRegisto, "/perfil": viewPerfil, "/amigos": viewAmigos, "/mensagens": viewMensagens,
+  "/chat": viewChat, "/comunidades": viewComunidades, "/c": viewComunidade, "/u": viewUser };
+const PUBLIC = ["/login", "/registo"];
 
 /* Mostra instruções se o Supabase ainda não estiver configurado */
 function viewSetup() {
@@ -532,12 +836,14 @@ function viewSetup() {
 
 async function router() {
   if (!CONFIGURED) return viewSetup();
+  stopChat();
   const path = location.hash.slice(1) || "/";
-  const user = await api.me();
-  if (!user && PROTECTED.includes(path)) return (location.hash = "#/login");   // exige sessão
-  if (user && !PROTECTED.includes(path)) return (location.hash = "#/");
-  window.scrollTo(0, 0);
-  await safe(() => (routes[path] || viewFeed)());
+  const [, root = "", arg = ""] = path.match(/^\/([^/]*)(?:\/(.+))?$/) || [];
+  const key = "/" + root, user = await api.me(), isPublic = PUBLIC.includes(key);
+  if (!user && !isPublic) return (location.hash = "#/login");   // exige sessão
+  if (user && isPublic) return (location.hash = "#/");
+  composerCommunity = null; window.scrollTo(0, 0);
+  await safe(() => (routes[key] || viewFeed)(decodeURIComponent(arg)));
 }
 window.addEventListener("hashchange", router);
 if (CONFIGURED) sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") router(); });
