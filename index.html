@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0d0f14">
+<title>InLog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================
+   InLog — folha de estilos única
+   1. Tokens  2. Base  3. Header  4. Layout  5. Componentes
+   6. Autenticação  7. Perfil  8. Responsivo
+   ========================================================== */
+
+/* 1. TOKENS — altera aqui as cores e o "feeling" da app */
+:root {
+  --bg: #0d0f14;          /* fundo da página */
+  --surface: #151822;     /* cartões */
+  --surface-2: #1d2130;   /* campos, hover */
+  --line: #262b3b;        /* bordas */
+  --text: #eceef5;
+  --muted: #8a92a8;
+  --accent: #8b7bff;      /* cor de destaque (violeta-íris) */
+  --accent-2: #5ee0c1;    /* destaque secundário (menta) */
+  --danger: #ff6b81;
+  --r-sm: 10px; --r-md: 14px; --r-lg: 20px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --font: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* 2. BASE */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-decoration: none; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
+.muted { color: var(--muted); }
+
+/* Botões */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 18px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); cursor: pointer; font-weight: 600; transition: transform .2s var(--ease), background .2s, border-color .2s; }
+.btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+.btn:active { transform: translateY(0) scale(.98); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #12102a; }
+.btn-primary:hover { background: #9d8fff; }
+.btn-block { width: 100%; padding: 12px; }
+
+/* Avatar: iniciais sobre gradiente (trocar por <img> quando houver fotos) */
+.avatar { width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #12102a; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.avatar.lg { width: 96px; height: 96px; font-size: 32px; border: 4px solid var(--bg); }
+
+/* 3. HEADER */
+.header { position: sticky; top: 0; z-index: 20; background: rgba(13, 15, 20, .85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.header-in { max-width: 1080px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 20px; }
+.logo { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; letter-spacing: -.04em; }
+.logo svg { width: 28px; height: 28px; }
+.nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.nav a:not(.btn) { padding: 8px 14px; border-radius: 999px; color: var(--muted); transition: color .2s, background .2s; }
+.nav a:not(.btn):hover, .nav a.active { color: var(--text); background: var(--surface-2); }
+.burger { display: none; margin-left: auto; background: none; border: 0; padding: 8px; cursor: pointer; }
+.burger span { display: block; width: 22px; height: 2px; margin: 5px 0; background: var(--text); border-radius: 2px; transition: transform .25s var(--ease), opacity .2s; }
+.burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+/* 4. LAYOUT (3 colunas no desktop, 1 no telemóvel) */
+.layout { max-width: 1080px; margin: 0 auto; padding: 20px 16px 90px; display: grid; grid-template-columns: 250px minmax(0, 1fr) 250px; gap: 20px; align-items: start; }
+.side { position: sticky; top: 76px; display: grid; gap: 16px; }
+.feed { display: grid; gap: 14px; }
+
+/* 5. COMPONENTES */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; }
+.user-card { text-align: center; }
+.user-card .avatar { margin: 0 auto 10px; width: 64px; height: 64px; font-size: 22px; }
+.stats { display: flex; justify-content: space-around; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.stats b { display: block; font-size: 18px; }
+.stats span { font-size: 12px; color: var(--muted); }
+
+.composer { display: flex; align-items: center; gap: 12px; width: 100%; cursor: pointer; text-align: left; color: var(--muted); transition: border-color .2s; }
+.composer:hover { border-color: var(--accent); }
+
+/* Publicação */
+.post { display: flex; gap: 12px; position: relative; animation: enter .35s var(--ease) both; }
+.post-body { min-width: 0; flex: 1; }
+.post-head { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.post-head b { font-weight: 700; }
+.post-text { margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 6px; margin-left: -8px; }
+.act { background: none; border: 0; padding: 6px 10px; border-radius: 999px; color: var(--muted); cursor: pointer; transition: color .2s, background .2s, transform .2s var(--ease); }
+.act:hover { background: var(--surface-2); color: var(--text); }
+.act.liked { color: var(--danger); }
+.act.liked .heart { animation: pop .3s var(--ease); display: inline-block; }
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop { 50% { transform: scale(1.4); } }
+
+.list-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.list-item .avatar { width: 36px; height: 36px; font-size: 13px; }
+.list-item .btn { margin-left: auto; padding: 5px 12px; font-size: 13px; }
+.card h3 { font-size: 15px; margin-bottom: 6px; }
+
+/* Botão flutuante (só telemóvel) */
+.fab { display: none; position: fixed; right: 18px; bottom: 18px; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--accent); color: #12102a; font-size: 28px; cursor: pointer; box-shadow: 0 8px 24px rgba(139, 123, 255, .4); transition: transform .2s var(--ease); }
+.fab:active { transform: scale(.92); }
+
+/* Diálogo (criar publicação / editar perfil) */
+dialog { width: min(520px, calc(100% - 32px)); background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px; }
+dialog::backdrop { background: rgba(5, 6, 10, .7); backdrop-filter: blur(3px); }
+dialog[open] { animation: enter .25s var(--ease); }
+dialog h2 { font-size: 18px; margin-bottom: 14px; }
+.dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 14px; }
+.counter { margin-right: auto; font-size: 13px; color: var(--muted); }
+
+/* Formulários */
+.field { display: grid; gap: 6px; margin-bottom: 14px; }
+.field label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.input { width: 100%; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); transition: border-color .2s, box-shadow .2s; }
+.input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 123, 255, .2); }
+textarea.input { resize: vertical; min-height: 110px; }
+.error { color: var(--danger); font-size: 13px; min-height: 18px; margin: 0 0 8px; }
+
+/* Aviso temporário */
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-weight: 600; opacity: 0; pointer-events: none; transition: .3s var(--ease); z-index: 50; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* 6. AUTENTICAÇÃO */
+.auth { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(600px 300px at 50% 0, rgba(139, 123, 255, .16), transparent); }
+.auth-card { width: min(400px, 100%); padding: 28px; animation: enter .4s var(--ease) both; }
+.auth-card .logo { justify-content: center; margin-bottom: 6px; }
+.auth-card h1 { font-size: 20px; text-align: center; }
+.auth-card .sub { text-align: center; margin: 4px 0 22px; }
+.auth-foot { text-align: center; margin: 18px 0 0; color: var(--muted); }
+.auth-foot a { color: var(--accent); font-weight: 700; }
+
+/* 7. PERFIL */
+.profile { max-width: 680px; margin: 0 auto; padding: 0 16px 90px; }
+.cover { height: 150px; margin-top: 16px; border-radius: var(--r-lg); background: linear-gradient(120deg, #26215a, #14303a); }
+.profile-head { display: flex; align-items: flex-end; justify-content: space-between; margin: -48px 16px 0; }
+.profile-info { padding: 12px 16px 0; }
+.profile-info h1 { font-size: 24px; }
+.profile-stats { display: flex; gap: 22px; margin: 14px 0 22px; }
+.profile-stats b { font-size: 17px; }
+
+/* 8. RESPONSIVO */
+@media (max-width: 960px) { .layout { grid-template-columns: 230px minmax(0, 1fr); } .side-right { display: none; } }
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; padding-top: 14px; }
+  .side-left { position: static; }
+  .burger { display: block; }
+  .nav { display: none; position: absolute; top: 100%; left: 0; right: 0; flex-direction: column; align-items: stretch; padding: 12px 16px 16px; background: var(--surface); border-bottom: 1px solid var(--line); margin: 0; }
+  .nav.open { display: flex; animation: enter .25s var(--ease); }
+  .nav .btn { margin-top: 6px; }
+  .fab { display: block; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Extras da versão com Supabase */
+.avatar { overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.hidden { display: none !important; }
+.empty { text-align: center; color: var(--muted); padding: 28px 16px; }
+.banner { background: var(--surface-2); border: 1px dashed var(--accent); border-radius: var(--r-md); padding: 8px 14px; font-size: 13px; color: var(--muted); text-align: center; }
+body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(600px 300px at 50% 0, rgba(139,123,255,.16), transparent); }
+.profile-info p { margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- Diálogo: nova publicação -->
+<dialog id="composer-dialog"><form method="dialog">
+  <h2>Nova publicação</h2>
+  <textarea class="input" maxlength="280" placeholder="O que estás a pensar?" required></textarea>
+  <div class="dialog-actions">
+    <span class="counter">0/280</span>
+    <button class="btn" value="cancel" formnovalidate>Cancelar</button>
+    <button class="btn btn-primary" value="ok">Publicar</button>
+  </div>
+</form></dialog>
+
+<!-- Diálogo: editar perfil -->
+<dialog id="edit-dialog"><form method="dialog">
+  <h2>Editar perfil</h2>
+  <div class="field" id="avatar-field"><label for="e-avatar">Foto de perfil</label><input class="input" id="e-avatar" type="file" accept="image/*"></div>
+  <div class="field"><label for="e-name">Nome de apresentação</label><input class="input" id="e-name" maxlength="40"></div>
+  <div class="field"><label for="e-bio">Biografia</label><textarea class="input" id="e-bio" maxlength="160"></textarea></div>
+  <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-primary" value="ok">Guardar</button></div>
+</form></dialog>
+
+<div class="toast" id="toast"></div>
+
+<!-- Biblioteca do Supabase (versão fixa, via CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.1/dist/umd/supabase.js"></script>
+<script>
+/* ==========================================================
+   InLog — ficheiro único (HTML + CSS + JS)
+   1. Configuração   2. Utilitários   3. Camada de dados (api)
+   4. Componentes    5. Vistas        6. Router e arranque
+   ========================================================== */
+
+/* ---------- 1. CONFIGURAÇÃO ----------
+   Preenche as duas linhas abaixo com o URL e a chave "anon/public" do teu projeto Supabase
+   (Project Settings → API Keys). A chave publishable (sb_publishable_...) é feita para ser pública;
+   a segurança vem das regras RLS do ficheiro supabase.sql.
+   Enquanto estiverem vazias, a app mostra um ecrã de configuração. */
+const SUPABASE_URL = "https://qqsyjrjrqkmfynmaudfo.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_aCtA-XL_1p2DLPW05-fz7A_YK_gx7-m";
+const CONFIGURED = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const sb = CONFIGURED ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+/* ---------- 2. UTILITÁRIOS ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const initials = (n = "?") => n.split(/[\s._]+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+const html = (s) => { const t = document.createElement("template"); t.innerHTML = s.trim(); return t.content.firstElementChild; };
+
+let toastTimer;
+function toast(msg) {
+  const el = $("#toast"); el.textContent = msg; el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+/* "há 5 min", "há 2 h"... */
+function timeAgo(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return "agora";
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  return new Date(iso).toLocaleDateString("pt-PT", { day: "numeric", month: "short" });
+}
+
+/* Executa uma ação e mostra o erro num aviso em vez de partir a app */
+async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message || "Algo correu mal."); } }
+
+/* ---------- 3. CAMADA DE DADOS ----------
+   Toda a comunicação com o Supabase passa por este objeto `api`. */
+const liveApi = {
+  async me() { const { data } = await sb.auth.getSession(); return data.session?.user || null; },
+  async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
+  async signUp(username, email, password) {
+    // O trigger do supabase.sql cria a linha em `profiles` com este username
+    const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username }, emailRedirectTo: location.origin + location.pathname } });
+    if (error) throw error;
+    return { needsConfirm: !data.session };
+  },
+  async signOut() { await sb.auth.signOut(); },
+  async profile(id) { const { data, error } = await sb.from("profiles").select("*").eq("id", id).single(); if (error) throw error; return data; },
+  async updateProfile(id, fields, file) {
+    if (file) { // imagem → Supabase Storage (bucket "avatars", pasta = id do utilizador)
+      const path = `${id}/avatar`;
+      const up = await sb.storage.from("avatars").upload(path, file, { upsert: true, contentType: file.type });
+      if (up.error) throw up.error;
+      fields.avatar_url = sb.storage.from("avatars").getPublicUrl(path).data.publicUrl + "?v=" + Date.now();
+    }
+    const { error } = await sb.from("profiles").update(fields).eq("id", id); if (error) throw error;
+  },
+  async posts(myId, userId) {
+    let q = sb.from("posts").select("id,content,created_at,user_id,profiles(username,display_name,avatar_url),likes(user_id)").order("created_at", { ascending: false }).limit(50);
+    if (userId) q = q.eq("user_id", userId);
+    const { data, error } = await q; if (error) throw error;
+    return data.map((r) => ({ id: r.id, userId: r.user_id, text: r.content, time: r.created_at, name: r.profiles.display_name || r.profiles.username, username: r.profiles.username, avatar: r.profiles.avatar_url, likes: r.likes.length, liked: r.likes.some((l) => l.user_id === myId) }));
+  },
+  async createPost(text) { const { error } = await sb.from("posts").insert({ content: text }); if (error) throw error; },
+  async toggleLike(post, myId) {
+    const q = sb.from("likes");
+    const { error } = post.liked ? await q.delete().match({ post_id: post.id, user_id: myId }) : await q.insert({ post_id: post.id });
+    if (error) throw error;
+  },
+  async suggestions(myId) { const { data } = await sb.from("profiles").select("id,username,display_name,avatar_url").neq("id", myId).limit(3); return data || []; },
+};
+
+/* ---------- 4. COMPONENTES ---------- */
+const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#8b7bff"/><path d="M10 9v14M16 9v14M22 16h-6" stroke="#12102a" stroke-width="3" stroke-linecap="round"/></svg>`;
+
+/* Avatar: foto (Storage) ou iniciais */
+function avatar(name, url, cls = "") {
+  const d = html(`<div class="avatar ${cls}"></div>`);
+  if (url) { const i = new Image(); i.src = url; i.alt = ""; d.appendChild(i); } else d.textContent = initials(name);
+  return d;
+}
+
+/* Publicação. Texto de utilizadores entra sempre com textContent (anti-XSS) */
+function postEl(p, myId) {
+  const el = html(`<article class="card post"><div class="post-body">
+    <div class="post-head"><b></b><span class="muted"></span></div><p class="post-text"></p>
+    <div class="actions"><button class="act like"><span class="heart">♥</span> <span class="n"></span></button></div></div></article>`);
+  el.prepend(avatar(p.name, p.avatar));
+  $("b", el).textContent = p.name;
+  $(".muted", el).textContent = `@${p.username} · ${timeAgo(p.time)}`;
+  $(".post-text", el).textContent = p.text;
+  const btn = $(".like", el), paint = () => { btn.classList.toggle("liked", p.liked); $(".n", btn).textContent = p.likes; };
+  paint();
+  btn.addEventListener("click", async () => {
+    const ok = await safe(async () => { await api.toggleLike(p, myId); return true; });
+    if (!ok) return;
+    p.liked = !p.liked; p.likes += p.liked ? 1 : -1; paint();   // atualização visual imediata
+  });
+  return el;
+}
+
+function headerHTML(page) {
+  const a = (h, t, k) => `<a href="${h}" class="${page === k ? "active" : ""}">${t}</a>`;
+  return `<header class="header"><div class="header-in">
+    <a href="#/" class="logo">${LOGO}<span>InLog</span></a>
+    <button class="burger" aria-label="Abrir menu" aria-expanded="false"><span></span><span></span><span></span></button>
+    <nav class="nav">${a("#/", "Início", "home")}${a("#/perfil", "Perfil", "perfil")}<a href="#" id="logout">Sair</a>
+    <a href="#" class="btn btn-primary" data-open-composer>Publicar</a></nav></div></header>`;
+}
+
+/* Monta uma página com header; liga menu móvel e botão Sair */
+function mountPage(page, mainHTML) {
+  document.body.classList.remove("auth-mode");
+  const app = $("#app"); app.innerHTML = headerHTML(page) + mainHTML + `<button class="fab" data-open-composer aria-label="Nova publicação">+</button>`;
+  const burger = $(".burger"), nav = $(".nav");
+  burger.onclick = () => burger.setAttribute("aria-expanded", nav.classList.toggle("open"));
+  $("#logout").onclick = async (e) => { e.preventDefault(); await safe(() => api.signOut()); location.hash = "#/login"; };
+}
+
+/* Diálogo de publicar: a vista atual define o que fazer depois de publicar */
+let afterPublish = () => {};
+(function wireComposer() {
+  const dlg = $("#composer-dialog"), ta = $("textarea", dlg);
+  ta.addEventListener("input", () => ($(".counter", dlg).textContent = `${ta.value.length}/280`));
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("[data-open-composer]")) { e.preventDefault(); $(".nav")?.classList.remove("open"); dlg.showModal(); ta.focus(); }
+  });
+  $("form", dlg).addEventListener("submit", async (e) => {
+    if (e.submitter?.value !== "ok" || !ta.value.trim()) return;
+    const ok = await safe(async () => { await api.createPost(ta.value.trim()); return true; });
+    if (ok) { ta.value = ""; $(".counter", dlg).textContent = "0/280"; toast("Publicado"); afterPublish(); }
+  });
+})();
+
+/* ---------- 5. VISTAS ---------- */
+async function viewFeed() {
+  const me = await api.me(), prof = await api.profile(me.id);
+  mountPage("home", `<main class="layout">
+    <aside class="side side-left"><div class="card user-card" id="user-card"></div></aside>
+    <section class="feed">
+      <button class="card composer" data-open-composer><span id="me-av"></span>O que estás a pensar?</button>
+      <div id="feed" class="feed"></div></section>
+    <aside class="side side-right"><div class="card" id="suggestions"><h3>Pessoas a seguir</h3></div></aside></main>`);
+
+  const card = $("#user-card");
+  card.append(avatar(prof.display_name || prof.username, prof.avatar_url), html("<h3></h3>"), html('<div class="muted"></div>'));
+  $("h3", card).textContent = prof.display_name || prof.username; $(".muted", card).textContent = "@" + prof.username;
+  $("#me-av").replaceWith(avatar(prof.display_name || prof.username, prof.avatar_url));
+
+  const load = async () => {
+    const posts = await safe(() => api.posts(me.id)) || [], feed = $("#feed"); feed.replaceChildren();
+    if (!posts.length) feed.append(html('<div class="card empty">Ainda não há publicações. Escreve a primeira!</div>'));
+    posts.forEach((p) => feed.append(postEl(p, me.id)));
+  };
+  afterPublish = load; load();
+
+  const people = await api.suggestions(me.id);
+  if (!people.length) $("#suggestions").classList.add("hidden");
+  for (const s of people) {
+    const row = html(`<div class="list-item"><div><b></b><div class="muted"></div></div><button class="btn">Seguir</button></div>`);
+    row.prepend(avatar(s.display_name || s.username, s.avatar_url));
+    $("b", row).textContent = s.display_name || s.username; $(".muted", row).textContent = "@" + s.username;
+    $(".btn", row).onclick = (e) => (e.target.textContent = "A seguir");   // visual por agora
+    $("#suggestions").append(row);
+  }
+}
+
+function authView(title, sub, fields, btn, foot) {
+  document.body.classList.add("auth-mode");
+  $("#app").innerHTML = `<main class="card auth-card"><a href="#/" class="logo">${LOGO}<span>InLog</span></a>
+    <h1>${title}</h1><p class="sub muted">${sub}</p>
+    <form id="auth-form">${fields}<p class="error" id="form-error" role="alert"></p><button class="btn btn-primary btn-block">${btn}</button></form>
+    <p class="auth-foot">${foot}</p></main>`;
+  return $("#auth-form");
+}
+const field = (id, label, type = "text", ac = "") => `<div class="field"><label for="${id}">${label}</label><input class="input" id="${id}" type="${type}" autocomplete="${ac}" required></div>`;
+
+function viewLogin() {
+  const form = authView("Bem-vindo de volta", "Entra para ver o que há de novo.",
+    field("email", "Email", "email", "email") + field("password", "Palavra-passe", "password", "current-password"),
+    "Iniciar sessão", 'Ainda não tens conta? <a href="#/registo">Criar conta</a>');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api.signIn($("#email").value.trim(), $("#password").value); location.hash = "#/"; }
+    catch (err) { $("#form-error").textContent = "Email ou palavra-passe incorretos."; }
+  };
+}
+
+function viewRegisto() {
+  const form = authView("Cria a tua conta", "Leva menos de um minuto.",
+    field("username", "Nome de utilizador", "text", "username") + field("email", "Email", "email", "email") +
+    field("password", "Palavra-passe", "password", "new-password") + field("confirm", "Confirmar palavra-passe", "password", "new-password"),
+    "Criar conta", 'Já tens conta? <a href="#/login">Iniciar sessão</a>');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const err = $("#form-error"), pw = $("#password").value, user = $("#username").value.trim();
+    if (!/^[a-zA-Z0-9._]{3,20}$/.test(user)) return (err.textContent = "Utilizador: 3–20 caracteres (letras, números, . e _).");
+    if (pw.length < 6) return (err.textContent = "A palavra-passe precisa de pelo menos 6 caracteres.");
+    if (pw !== $("#confirm").value) return (err.textContent = "As palavras-passe não coincidem.");
+    err.textContent = "";
+    try {
+      const r = await api.signUp(user, $("#email").value.trim(), pw);
+      if (r.needsConfirm) { toast("Conta criada! Confirma o teu email para entrar."); location.hash = "#/login"; } else location.hash = "#/";
+    } catch (ex) { err.textContent = ex.message; }
+  };
+}
+
+async function viewPerfil() {
+  const me = await api.me(); let prof = await api.profile(me.id);
+  mountPage("perfil", `<main class="profile"><div class="cover"></div>
+    <div class="profile-head"><span id="p-av"></span><button class="btn" id="edit-btn">Editar perfil</button></div>
+    <div class="profile-info"><h1 id="p-name"></h1><div class="muted" id="p-user"></div><p id="p-bio"></p>
+    <div class="profile-stats"><div><b id="p-count">0</b> <span class="muted">publicações</span></div></div></div>
+    <div id="p-posts" class="feed"></div></main>`);
+
+  const draw = () => {
+    $("#p-av").replaceChildren(avatar(prof.display_name || prof.username, prof.avatar_url, "lg"));
+    $("#p-name").textContent = prof.display_name || prof.username; $("#p-user").textContent = "@" + prof.username; $("#p-bio").textContent = prof.bio || "";
+  };
+  const load = async () => {
+    const posts = await safe(() => api.posts(me.id, me.id)) || [], list = $("#p-posts"); list.replaceChildren();
+    $("#p-count").textContent = posts.length;
+    if (!posts.length) list.append(html('<div class="card empty">Ainda não publicaste nada.</div>'));
+    posts.forEach((p) => list.append(postEl(p, me.id)));
+  };
+  draw(); load(); afterPublish = load;
+
+  const dlg = $("#edit-dialog");
+  $("#edit-btn").onclick = () => { $("#e-name").value = prof.display_name || ""; $("#e-bio").value = prof.bio || ""; $("#e-avatar").value = ""; dlg.showModal(); };
+  dlg.querySelector("form").onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok") return;
+    const file = $("#e-avatar").files[0];
+    if (file && file.size > 2 * 1024 * 1024) return toast("A imagem deve ter menos de 2 MB.");
+    const ok = await safe(async () => {
+      const fields = { display_name: $("#e-name").value.trim() || prof.username, bio: $("#e-bio").value.trim() };
+      await api.updateProfile(me.id, fields, file); return true;
+    });
+    if (ok) { prof = await api.profile(me.id); draw(); toast("Perfil atualizado"); }
+  };
+}
+
+/* ---------- 6. ROUTER E ARRANQUE ----------
+   Usamos rotas com # (ex.: #/perfil) porque o GitHub Pages só serve
+   ficheiros estáticos: assim não há erros 404 ao recarregar a página. */
+const routes = { "/": viewFeed, "/login": viewLogin, "/registo": viewRegisto, "/perfil": viewPerfil };
+const PROTECTED = ["/", "/perfil"];
+
+/* Mostra instruções se o Supabase ainda não estiver configurado */
+function viewSetup() {
+  document.body.classList.add("auth-mode");
+  $("#app").innerHTML = `<main class="card auth-card"><a href="#/" class="logo">${LOGO}<span>InLog</span></a>
+    <h1>Falta ligar o Supabase</h1>
+    <p class="sub muted">Abre o <b>index.html</b> e preenche <b>SUPABASE_URL</b> e <b>SUPABASE_ANON_KEY</b> no início do script.</p></main>`;
+}
+
+async function router() {
+  if (!CONFIGURED) return viewSetup();
+  const path = location.hash.slice(1) || "/";
+  const user = await api.me();
+  if (!user && PROTECTED.includes(path)) return (location.hash = "#/login");   // exige sessão
+  if (user && !PROTECTED.includes(path)) return (location.hash = "#/");
+  window.scrollTo(0, 0);
+  await safe(() => (routes[path] || viewFeed)());
+}
+window.addEventListener("hashchange", router);
+if (CONFIGURED) sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") router(); });
+router();
+</script>
+</body>
+</html>
