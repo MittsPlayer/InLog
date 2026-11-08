@@ -191,6 +191,21 @@ body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; pad
 .msg.me { align-self: flex-end; background: var(--accent); color: #12102a; }
 .msg small { display: block; font-size: 11px; color: var(--muted); }
 .chat-form { display: flex; gap: 8px; padding: 12px 0 14px; }
+.chat-host { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.msgs { min-height: 0; }
+.chan-host { display: flex; flex-direction: column; height: min(60dvh, 560px); padding: 0 16px; }
+.lnk { color: var(--accent); text-decoration: underline; } .msg.me .lnk { color: #12102a; }
+.btn-danger { border-color: var(--danger); color: var(--danger); } .btn-danger:hover { background: var(--danger); color: #12102a; border-color: var(--danger); }
+.callbar { position: fixed; left: 12px; right: 12px; bottom: 12px; max-width: 520px; margin: 0 auto; z-index: 60; display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--accent); border-radius: var(--r-lg); box-shadow: 0 10px 30px rgba(0,0,0,.5); animation: enter .25s var(--ease); }
+.callbar span { flex: 1; font-weight: 600; } .callbar .btn { padding: 7px 14px; }
+.comm-head { display: flex; gap: 14px; align-items: center; } .comm-head h2 { font-size: 20px; } .comm-head p { margin: 2px 0 0; }
+.avatar.md { width: 56px; height: 56px; font-size: 18px; }
+.chans { flex-wrap: wrap; }
+.role { border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px; margin: 10px 0; display: grid; gap: 10px; }
+.role-top, .add-row { display: flex; gap: 8px; } .add-row { margin-top: 10px; }
+input[type=color] { width: 46px; height: 46px; flex: none; padding: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.sel { width: auto; padding: 6px 10px; }
+.cfg h3 { margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -231,8 +246,30 @@ body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; pad
   <h2>Nova comunidade</h2>
   <div class="field"><label for="cm-name">Nome</label><input class="input" id="cm-name" maxlength="40"></div>
   <div class="field"><label for="cm-desc">Descrição</label><textarea class="input" id="cm-desc" maxlength="200" style="min-height:80px"></textarea></div>
+  <label class="check"><input type="checkbox" id="cm-private"><span>Privada (só entra quem tiver convite)</span></label>
   <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-primary" value="ok">Criar</button></div>
 </form></dialog>
+
+<!-- Diálogo: convidar para a comunidade -->
+<dialog id="invite-dialog"><form method="dialog">
+  <h2>Convidar para a comunidade</h2>
+  <div class="field"><label>Link de convite</label><div style="display:flex;gap:8px"><input class="input" id="inv-link" readonly><button type="button" class="btn btn-primary" id="inv-copy">Copiar</button></div></div>
+  <h3 style="margin-bottom:6px">Convidar amigos</h3><div id="inv-friends"></div>
+  <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Fechar</button></div>
+</form></dialog>
+
+<!-- Diálogo: apagar conta -->
+<dialog id="delete-dialog"><form method="dialog">
+  <h2>Apagar conta</h2>
+  <p class="muted">Isto apaga para sempre o teu perfil, publicações, mensagens e as comunidades que criaste. Não dá para desfazer.</p>
+  <div class="field"><label for="d-confirm">Escreve o teu nome de utilizador para confirmar</label><input class="input" id="d-confirm" autocomplete="off"></div>
+  <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-danger" value="ok">Apagar para sempre</button></div>
+</form></dialog>
+
+<!-- Chamadas de voz: barra durante a chamada, aviso de chamada recebida e áudio remoto -->
+<div class="callbar hidden" id="call-ui"><span id="call-text"></span><button class="btn" id="call-mute" aria-label="Silenciar">🎤</button><button class="btn btn-danger" id="call-end">Desligar</button></div>
+<div class="callbar hidden" id="incoming"><span id="inc-text"></span><button class="btn btn-primary" id="inc-yes">Atender</button><button class="btn" id="inc-no">Recusar</button></div>
+<audio id="remote-audio" autoplay></audio>
 
 <div class="toast" id="toast"></div>
 
@@ -407,15 +444,46 @@ const liveApi = {
   async messages(id) { const { data, error } = await sb.from("messages").select("id,sender_id,content,created_at").eq("conversation_id", id).order("created_at").limit(200); if (error) throw error; return data; },
   async sendMessage(id, text) { const { error } = await sb.from("messages").insert({ conversation_id: id, content: text }); if (error) throw error; },
 
-  /* ----- Comunidades ----- */
-  async communities() { const { data, error } = await sb.from("communities").select("id,name,description,community_members(user_id)").order("created_at", { ascending: false }); if (error) throw error; return data; },
-  async community(id) { const { data } = await sb.from("communities").select("id,name,description,community_members(user_id)").eq("id", id).maybeSingle(); return data; },
-  async createCommunity(name, description) {
-    const { data, error } = await sb.from("communities").insert({ name, description }).select("id").single(); if (error) throw error;
-    await liveApi.joinCommunity(data.id); return data.id;
-  },
-  async joinCommunity(id) { const { error } = await sb.from("community_members").insert({ community_id: id }); if (error) throw error; },
+  /* ----- Comunidades, canais, cargos e convites ----- */
+  async communities() { const { data, error } = await sb.from("communities").select("id,name,description,icon_url,is_private,community_members(user_id)").order("created_at", { ascending: false }); if (error) throw error; return data; },
+  async community(id) { const { data } = await sb.from("communities").select("id,name,description,icon_url,is_private,created_by,community_members(user_id,role_id),community_roles(*),community_channels(id,name)").eq("id", id).maybeSingle(); return data; },
+  async communityMembers(id) { const { data, error } = await sb.from("community_members").select("user_id,role_id,profiles(id,username,display_name,avatar_url)").eq("community_id", id); if (error) throw error; return data; },
+  async createCommunity(name, description, priv) { const { data, error } = await sb.rpc("create_community", { c_name: name, c_desc: description, c_private: priv }); if (error) throw error; return data; },
+  async joinCommunity(id) { const { error } = await sb.rpc("join_community", { cid: id }); if (error) throw error; },
+  async joinByInvite(code) { const { data, error } = await sb.rpc("join_by_invite", { invite_code: code }); if (error) throw error; return data; },
   async leaveCommunity(id, myId) { const { error } = await sb.from("community_members").delete().match({ community_id: id, user_id: myId }); if (error) throw error; },
+  async updateCommunity(id, fields, file) {
+    if (file) { // foto da comunidade → bucket "community-icons"
+      const path = `${id}/icon`, up = await sb.storage.from("community-icons").upload(path, await resizeImage(file, 512), { upsert: true, contentType: "image/jpeg" });
+      if (up.error) throw up.error;
+      fields.icon_url = sb.storage.from("community-icons").getPublicUrl(path).data.publicUrl + "?v=" + Date.now();
+    }
+    const { error } = await sb.from("communities").update(fields).eq("id", id); if (error) throw error;
+  },
+  async deleteCommunity(id) { const { error } = await sb.from("communities").delete().eq("id", id); if (error) throw error; },
+  async addChannel(cid, name) { const { error } = await sb.from("community_channels").insert({ community_id: cid, name }); if (error) throw error; },
+  async renameChannel(id, name) { const { error } = await sb.from("community_channels").update({ name }).eq("id", id); if (error) throw error; },
+  async deleteChannel(id) { const { error } = await sb.from("community_channels").delete().eq("id", id); if (error) throw error; },
+  async addRole(cid) { const { error } = await sb.from("community_roles").insert({ community_id: cid, name: "Novo cargo" }); if (error) throw error; },
+  async updateRole(id, f) { const { error } = await sb.from("community_roles").update(f).eq("id", id); if (error) throw error; },
+  async deleteRole(id) { const { error } = await sb.from("community_roles").delete().eq("id", id); if (error) throw error; },
+  async setMemberRole(cid, uid, roleId) { const { error } = await sb.from("community_members").update({ role_id: roleId }).match({ community_id: cid, user_id: uid }); if (error) throw error; },
+  async getInvite(cid) {   // reutiliza o link existente ou cria um novo
+    let { data } = await sb.from("community_invites").select("code").eq("community_id", cid).limit(1).maybeSingle();
+    if (!data) { const r = await sb.from("community_invites").insert({ community_id: cid }).select("code").single(); if (r.error) throw r.error; data = r.data; }
+    return data.code;
+  },
+  async channelMessages(id) { const { data, error } = await sb.from("channel_messages").select("id,sender_id,content,created_at").eq("channel_id", id).order("created_at").limit(200); if (error) throw error; return data; },
+  async sendChannelMessage(id, text) { const { error } = await sb.from("channel_messages").insert({ channel_id: id, content: text }); if (error) throw error; },
+
+  /* ----- Conta ----- */
+  async deleteAccount(uid) {
+    for (const b of ["avatars", "post-images"]) {   // apaga primeiro as imagens da pessoa
+      const { data } = await sb.storage.from(b).list(uid);
+      if (data?.length) await sb.storage.from(b).remove(data.map((f) => `${uid}/${f.name}`));
+    }
+    const { error } = await sb.rpc("delete_my_account"); if (error) throw error;
+  },
 };
 
 const api = liveApi;
@@ -476,7 +544,7 @@ function mountPage(page, mainHTML, fab = true) {
   const app = $("#app"); app.innerHTML = headerHTML(page) + mainHTML + (fab ? `<button class="fab" data-open-composer aria-label="Nova publicação">+</button>` : "");
   const burger = $(".burger"), nav = $(".nav");
   burger.onclick = () => burger.setAttribute("aria-expanded", nav.classList.toggle("open"));
-  $("#logout").onclick = async (e) => { e.preventDefault(); await safe(() => api.signOut()); location.hash = "#/login"; };
+  $("#logout").onclick = async (e) => { e.preventDefault(); stopListeners(); await safe(() => api.signOut()); location.hash = "#/login"; };
 }
 
 /* Diálogo de publicar: a vista atual define o que fazer depois de publicar */
@@ -591,7 +659,7 @@ function viewRegisto() {
 async function viewPerfil() {
   const me = await api.me(); let prof = await api.profile(me.id);
   mountPage("perfil", `<main class="profile"><div class="cover"></div>
-    <div class="profile-head"><span id="p-av"></span><button class="btn" id="edit-btn">Editar perfil</button></div>
+    <div class="profile-head"><span id="p-av"></span><div class="row-actions"><a class="btn" href="#/definicoes">Definições</a><button class="btn" id="edit-btn">Editar perfil</button></div></div>
     <div class="profile-info"><h1 id="p-name"></h1><div class="muted" id="p-user"></div><p id="p-bio"></p>
     <div class="profile-stats" id="p-stats"></div></div>
     <div id="p-posts" class="feed"></div></main>`);
@@ -622,9 +690,6 @@ async function viewPerfil() {
   };
 }
 
-/* ---------- 6. ROUTER E ARRANQUE ----------
-   Usamos rotas com # (ex.: #/perfil) porque o GitHub Pages só serve
-   ficheiros estáticos: assim não há erros 404 ao recarregar a página. */
 /* ---- Utilitários das novas vistas ---- */
 /* Linha de lista (pessoa, conversa, comunidade) com ações opcionais */
 function listRow(p, sub, href, actions = []) {
@@ -633,12 +698,16 @@ function listRow(p, sub, href, actions = []) {
   el.prepend(avatar(name, p.avatar_url));
   $("b", el).textContent = name; $(".muted", el).textContent = sub;
   if (href) { el.classList.add("link"); $(".grow", el).onclick = () => (location.hash = href); }
+  addActions(el, actions);
+  return el;
+}
+/* Acrescenta botões (com bloqueio durante a ação) ao .row-actions de um elemento */
+function addActions(el, actions) {
   for (const a of actions) {
     const b = html(`<button class="btn${a.primary ? " btn-primary" : ""}"></button>`); b.textContent = a.label;
     b.onclick = async () => { b.disabled = true; await safe(a.fn); b.disabled = false; };
     $(".row-actions", el).append(b);
   }
-  return el;
 }
 const note = (t) => html(`<p class="muted">${t}</p>`);
 
@@ -744,86 +813,334 @@ async function viewMensagens() {
   };
 }
 
-/* ---- Conversa (privada ou grupo) com mensagens em tempo real ---- */
+/* ---- Chat genérico (conversas e canais): carrega, mostra, envia e atualiza em tempo real ---- */
 let chatChannel = null;
 function stopChat() { if (chatChannel) { sb.removeChannel(chatChannel); chatChannel = null; } }
+
+/* Texto com links clicáveis (só http/https; o resto entra como texto seguro) */
+function setLinked(el, text) {
+  el.textContent = "";
+  text.split(/(https?:\/\/\S+)/g).forEach((part, i) => {
+    if (i % 2) { const a = document.createElement("a"); a.href = part; a.textContent = part; a.className = "lnk"; el.append(a); } else el.append(part);
+  });
+}
+
+async function chatPanel(host, { table, col, id, myId, nameOf, fetchFn, sendFn }) {
+  host.innerHTML = '<div class="msgs"></div><form class="chat-form"><input class="input" maxlength="1000" placeholder="Escreve uma mensagem…" autocomplete="off"><button class="btn btn-primary">Enviar</button></form>';
+  const box = $(".msgs", host), seen = new Set();
+  const add = (m) => {
+    if (seen.has(m.id)) return; seen.add(m.id);
+    const mine = m.sender_id === myId, el = html('<div class="msg"><small></small><span></span></div>');
+    if (mine) el.classList.add("me");
+    if (mine || !nameOf) $("small", el).remove(); else $("small", el).textContent = nameOf(m.sender_id);
+    setLinked($("span", el), m.content); box.append(el); box.scrollTop = box.scrollHeight;
+  };
+  const sync = async () => ((await safe(fetchFn)) || []).forEach(add);
+  await sync();
+  chatChannel = sb.channel(`${table}-${id}`).on("postgres_changes", { event: "INSERT", schema: "public", table, filter: `${col}=eq.${id}` }, (pl) => add(pl.new)).subscribe();
+  $("form", host).onsubmit = async (e) => {
+    e.preventDefault();
+    const inp = $("input", host), text = inp.value.trim(); if (!text) return;
+    inp.value = ""; await safe(() => sendFn(text)); setTimeout(sync, 700);   // plano B se o tempo real falhar
+  };
+}
 
 async function viewChat(id) {
   const me = await api.me(), conv = await api.conversation(id, me.id);
   if (!conv) return mountPage("mensagens", '<main class="page"><div class="card empty">Conversa não encontrada.</div></main>', false);
-  const who = Object.fromEntries(conv.members.map((m) => [m.id, m]));
-  mountPage("mensagens", `<main class="chat"><div class="chat-head"><a href="#/mensagens" class="btn">←</a><b id="c-title"></b><button class="btn hidden" id="leave">Sair do grupo</button></div>
-    <div class="msgs" id="msgs"></div>
-    <form class="chat-form" id="chat-form"><input class="input" id="c-text" maxlength="1000" placeholder="Escreve uma mensagem…" autocomplete="off"><button class="btn btn-primary">Enviar</button></form></main>`, false);
-  $("#c-title").textContent = convTitle(conv, me.id);
-  if (conv.type === "group") {
+  const who = Object.fromEntries(conv.members.map((m) => [m.id, m])), isGroup = conv.type === "group", other = conv.members.find((m) => m.id !== me.id);
+  mountPage("mensagens", `<main class="chat"><div class="chat-head"><a href="#/mensagens" class="btn">←</a><b id="c-title"></b>
+    <button class="btn hidden" id="call-btn" aria-label="Ligar">📞 Ligar</button><button class="btn hidden" id="leave">Sair do grupo</button></div><div class="chat-host" id="chat-host"></div></main>`, false);
+  const title = convTitle(conv, me.id); $("#c-title").textContent = title;
+  if (isGroup) {
     $("#leave").classList.remove("hidden");
     $("#leave").onclick = async () => { if (confirm("Sair deste grupo?")) { await safe(() => api.leaveConversation(id, me.id)); location.hash = "#/mensagens"; } };
+  } else if (other) {
+    $("#call-btn").classList.remove("hidden"); $("#call-btn").onclick = () => startCall({ id: other.id, name: title }, me.id);
   }
-  const box = $("#msgs"), seen = new Set();
-  const add = (m) => {
-    if (seen.has(m.id)) return; seen.add(m.id);
-    const mine = m.sender_id === me.id, el = html('<div class="msg"><small></small><span></span></div>');
-    if (mine) el.classList.add("me");
-    if (mine || conv.type !== "group") $("small", el).remove(); else $("small", el).textContent = (who[m.sender_id] || {}).display_name || "Ex-membro";
-    $("span", el).textContent = m.content; box.append(el); box.scrollTop = box.scrollHeight;
-  };
-  const sync = async () => ((await safe(() => api.messages(id))) || []).forEach(add);
-  await sync();
-  // Tempo real: novas mensagens aparecem sem recarregar
-  chatChannel = sb.channel("chat-" + id).on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${id}` }, (pl) => add(pl.new)).subscribe();
-  $("#chat-form").onsubmit = async (e) => {
-    e.preventDefault();
-    const inp = $("#c-text"), text = inp.value.trim(); if (!text) return;
-    inp.value = ""; await safe(() => api.sendMessage(id, text)); setTimeout(sync, 700);   // plano B se o tempo real falhar
-  };
+  await chatPanel($("#chat-host"), { table: "messages", col: "conversation_id", id, myId: me.id,
+    nameOf: isGroup ? (u) => (who[u] || {}).display_name || "Ex-membro" : null, fetchFn: () => api.messages(id), sendFn: (t) => api.sendMessage(id, t) });
 }
 
-/* ---- Comunidades ---- */
+/* ---- Comunidades: lista, página com canais, convites e definições ---- */
+const PERMS = [["manage_community", "Gerir comunidade e cargos"], ["manage_channels", "Gerir canais"], ["manage_members", "Gerir membros"], ["invite_members", "Convidar pessoas"]];
+/* O dono tem todas as permissões; os outros têm as do seu cargo */
+function myPerms(c, myId) {
+  if (c.created_by === myId) return Object.fromEntries(PERMS.map(([k]) => [k, true]));
+  const m = c.community_members.find((x) => x.user_id === myId), r = c.community_roles.find((x) => x.id === (m || {}).role_id);
+  return Object.fromEntries(PERMS.map(([k]) => [k, !!(r && r[k])]));
+}
+
 async function viewComunidades() {
   const me = await api.me();
-  mountPage("comunidades", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Comunidades</h2><button class="btn btn-primary" id="new-comm">Criar</button></div><div class="card" id="comms"></div></main>`);
+  mountPage("comunidades", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Comunidades</h2><button class="btn btn-primary" id="new-comm">Criar</button></div><div class="card" id="comms"></div></main>`, false);
   const load = async () => {
     const list = await safe(() => api.communities()) || [];
     $("#comms").replaceChildren(...(list.length ? list.map((c) => {
       const joined = c.community_members.some((m) => m.user_id === me.id);
-      return listRow({ name: c.name }, `${c.community_members.length} membros${c.description ? " · " + c.description : ""}`, "#/c/" + c.id, [
-        { label: joined ? "Sair" : "Entrar", primary: !joined, fn: async () => { await (joined ? api.leaveCommunity(c.id, me.id) : api.joinCommunity(c.id)); load(); } }]);
+      return listRow({ name: c.name, avatar_url: c.icon_url }, `${c.is_private ? "🔒 " : ""}${c.community_members.length} membros${c.description ? " · " + c.description : ""}`, "#/c/" + c.id,
+        joined ? [] : [{ label: "Entrar", primary: true, fn: async () => { await api.joinCommunity(c.id); load(); } }]);
     }) : [note("Ainda não há comunidades. Cria a primeira!")]));
   };
   load();
-  $("#new-comm").onclick = () => { $("#cm-name").value = ""; $("#cm-desc").value = ""; $("#comm-dialog").showModal(); };
+  $("#new-comm").onclick = () => { $("#cm-name").value = ""; $("#cm-desc").value = ""; $("#cm-private").checked = false; $("#comm-dialog").showModal(); };
   $("#comm-dialog form").onsubmit = async (e) => {
     if (e.submitter?.value !== "ok") return;
     const cname = $("#cm-name").value.trim();
     if (cname.length < 2) { e.preventDefault(); return toast("Dá um nome à comunidade."); }
-    const id = await safe(() => api.createCommunity(cname, $("#cm-desc").value.trim())); if (id) location.hash = "#/c/" + id;
+    const id = await safe(() => api.createCommunity(cname, $("#cm-desc").value.trim(), $("#cm-private").checked)); if (id) location.hash = "#/c/" + id;
   };
 }
 
-async function viewComunidade(id) {
-  const me = await api.me();
-  if (!(await api.community(id))) return mountPage("comunidades", '<main class="page"><div class="card empty">Comunidade não encontrada.</div></main>');
-  composerCommunity = Number(id);   // o botão Publicar passa a publicar aqui dentro
-  mountPage("comunidades", `<main class="page"><div class="card"><h2 id="c-name"></h2><p class="muted" id="c-desc"></p><div class="row-actions" id="c-actions" style="margin:0"></div></div><div id="c-feed" class="feed"></div></main>`);
-  const paint = async () => {
-    const c = await api.community(id), joined = c.community_members.some((m) => m.user_id === me.id);
-    $("#c-name").textContent = c.name; $("#c-desc").textContent = `${c.community_members.length} membros${c.description ? " · " + c.description : ""}`;
-    const acts = $("#c-actions"); acts.replaceChildren();
-    const b = html(`<button class="btn${joined ? "" : " btn-primary"}"></button>`); b.textContent = joined ? "Sair da comunidade" : "Entrar";
-    b.onclick = async () => { await safe(() => (joined ? api.leaveCommunity(c.id, me.id) : api.joinCommunity(c.id))); paint(); }; acts.append(b);
-    if (joined) acts.append(html('<button class="btn btn-primary" data-open-composer>Publicar aqui</button>'));
-    const posts = await safe(() => api.posts(me.id, null, { communityId: c.id })) || [], feed = $("#c-feed"); feed.replaceChildren();
-    if (!posts.length) feed.append(html('<div class="card empty">Ainda não há publicações nesta comunidade.</div>'));
-    posts.forEach((p) => feed.append(postEl(p, me.id)));
-  };
-  afterPublish = paint; paint();
+async function viewComunidade(arg) {
+  const [id, chId] = arg.split("/"), me = await api.me(), c = await api.community(id);
+  if (!c) return mountPage("comunidades", '<main class="page"><div class="card empty">Comunidade não encontrada ou privada.</div></main>', false);
+  const mine = c.community_members.some((m) => m.user_id === me.id), P = myPerms(c, me.id);
+  const chans = [...c.community_channels].sort((a, b) => a.id - b.id), ch = chans.find((x) => String(x.id) === chId) || chans[0];
+  mountPage("comunidades", `<main class="page"><div class="card comm-head"><span id="c-ic"></span><div class="grow"><h2 id="c-name"></h2><p class="muted" id="c-desc"></p></div></div>
+    <div class="row-actions" id="c-actions" style="justify-content:flex-start"></div><div class="tabs chans" id="c-chans"></div><div class="card chan-host" id="c-chat"></div></main>`, false);
+  $("#c-ic").append(avatar(c.name, c.icon_url, "md")); $("#c-name").textContent = (c.is_private ? "🔒 " : "") + c.name;
+  $("#c-desc").textContent = `${c.community_members.length} membros${c.description ? " · " + c.description : ""}`;
+  const acts = [];
+  if (!mine) acts.push({ label: "Entrar", primary: true, fn: async () => { await api.joinCommunity(c.id); router(); } });
+  else if (c.created_by !== me.id) acts.push({ label: "Sair", fn: async () => { if (confirm("Sair desta comunidade?")) { await api.leaveCommunity(c.id, me.id); router(); } } });
+  if (mine && P.invite_members) acts.push({ label: "Convidar", primary: true, fn: () => openInvite(c, me.id) });
+  if (mine && Object.values(P).some(Boolean)) acts.push({ label: "⚙ Definições", fn: () => (location.hash = "#/cfg/" + c.id) });
+  addActions($(".page"), acts);   // preenche o primeiro .row-actions (#c-actions)
+  chans.forEach((x) => { const a = html(`<a class="btn${ch && x.id === ch.id ? " btn-primary" : ""}"></a>`); a.href = `#/c/${c.id}/${x.id}`; a.textContent = "# " + x.name; if (mine) $("#c-chans").append(a); });
+  const host = $("#c-chat");
+  if (!mine || !ch) { host.append(note(mine ? "Esta comunidade ainda não tem canais." : "Entra na comunidade para ver os canais e conversar.")); host.style.height = "auto"; host.style.padding = "16px"; return; }
+  const names = Object.fromEntries((await api.communityMembers(c.id)).map((m) => [m.user_id, m.profiles.display_name || m.profiles.username]));
+  await chatPanel(host, { table: "channel_messages", col: "channel_id", id: ch.id, myId: me.id, nameOf: (u) => names[u] || "Ex-membro", fetchFn: () => api.channelMessages(ch.id), sendFn: (t) => api.sendChannelMessage(ch.id, t) });
 }
+
+/* Convidar: link (estilo Discord) ou mensagem direta a um amigo com o link */
+async function openInvite(c, myId) {
+  const code = await safe(() => api.getInvite(c.id)); if (!code) return;
+  const link = location.origin + location.pathname + "#/convite/" + code;
+  $("#inv-link").value = link;
+  $("#inv-copy").onclick = async () => { try { await navigator.clipboard.writeText(link); toast("Link copiado"); } catch { $("#inv-link").select(); toast("Seleciona e copia o link."); } };
+  const inside = new Set((await api.communityMembers(c.id)).map((m) => m.user_id));
+  const fr = ((await safe(() => api.friends(myId))) || []).filter((r) => r.status === "accepted" && !inside.has(r.other.id));
+  $("#inv-friends").replaceChildren(...(fr.length ? fr.map((r) => listRow(r.other, "@" + r.other.username, null, [{ label: "Convidar", primary: true, fn: async () => {
+    const cid = await api.startDM(r.other.id); await api.sendMessage(cid, `Convite para a comunidade "${c.name}": ${link}`); toast("Convite enviado");
+  } }])) : [note("Sem amigos para convidar (ou já estão na comunidade).")]));
+  $("#invite-dialog").showModal();
+}
+
+async function viewConvite(code) {   // abre o link de convite: entra e vai para a comunidade
+  const id = await safe(() => api.joinByInvite(code)); location.hash = id ? "#/c/" + id : "#/comunidades";
+}
+
+/* ---- Definições da comunidade: geral, canais, cargos e membros ---- */
+async function viewCfg(id) {
+  const me = await api.me(), c = await api.community(id);
+  if (!c) return mountPage("comunidades", '<main class="page"><div class="card empty">Comunidade não encontrada.</div></main>', false);
+  const P = myPerms(c, me.id);
+  if (!Object.values(P).some(Boolean)) return (location.hash = "#/c/" + id);
+  mountPage("comunidades", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Definições</h2><a class="btn" href="#/c/${id}">← Voltar</a></div><div id="cfg" class="page" style="padding:0"></div></main>`, false);
+  const root = $("#cfg"), reload = () => viewCfg(id);
+  const card = (t) => { const el = html("<div class='card cfg'><h3></h3></div>"); $("h3", el).textContent = t; root.append(el); return el; };
+  const roles = [...c.community_roles].sort((a, b) => a.id - b.id), chans = [...c.community_channels].sort((a, b) => a.id - b.id);
+
+  if (P.manage_community) {
+    const g = card("Geral");
+    g.insertAdjacentHTML("beforeend", `<div class="field"><label>Foto da comunidade</label><input class="input" id="cf-icon" type="file" accept="image/*"></div>
+      <div class="field"><label>Nome</label><input class="input" id="cf-name" maxlength="40"></div>
+      <div class="field"><label>Descrição</label><textarea class="input" id="cf-desc" maxlength="200" style="min-height:80px"></textarea></div>
+      <label class="check"><input type="checkbox" id="cf-priv"><span>Privada (só entra quem tiver convite)</span></label>
+      <div class="row-actions" id="cf-acts" style="margin-top:12px"></div>`);
+    $("#cf-name").value = c.name; $("#cf-desc").value = c.description || ""; $("#cf-priv").checked = c.is_private;
+    const acts = [{ label: "Guardar", primary: true, fn: async () => {
+      await api.updateCommunity(c.id, { name: $("#cf-name").value.trim() || c.name, description: $("#cf-desc").value.trim(), is_private: $("#cf-priv").checked }, $("#cf-icon").files[0]);
+      toast("Guardado"); reload(); } }];
+    if (c.created_by === me.id) acts.push({ label: "Apagar comunidade", fn: async () => { if (confirm(`Apagar "${c.name}" para sempre?`)) { await api.deleteCommunity(c.id); location.hash = "#/comunidades"; } } });
+    addActions(g, acts);
+  }
+
+  if (P.manage_channels) {
+    const k = card("Canais");
+    chans.forEach((x) => { const r = html('<div class="list-item"><div class="grow"><b></b></div><div class="row-actions"></div></div>'); $("b", r).textContent = "# " + x.name;
+      addActions(r, [
+        { label: "Renomear", fn: async () => { const n = prompt("Novo nome do canal:", x.name); if (n && n.trim()) { await api.renameChannel(x.id, n.trim().toLowerCase().replace(/\s+/g, "-")); reload(); } } },
+        { label: "Apagar", fn: async () => { if (chans.length < 2) return toast("É preciso pelo menos um canal."); if (confirm(`Apagar #${x.name} e as suas mensagens?`)) { await api.deleteChannel(x.id); reload(); } } }]);
+      k.append(r); });
+    k.append(html('<div class="add-row"><input class="input" id="new-ch" maxlength="30" placeholder="novo-canal"><button class="btn btn-primary" id="add-ch">Criar canal</button></div>'));
+    $("#add-ch").onclick = async () => { const n = $("#new-ch").value.trim().toLowerCase().replace(/\s+/g, "-"); if (!n) return; await safe(() => api.addChannel(c.id, n)); reload(); };
+  }
+
+  if (P.manage_community) {
+    const k = card("Cargos");
+    roles.forEach((r) => {
+      const el = html('<div class="role"><div class="role-top"><input type="color" class="rc"><input class="input rn" maxlength="24"></div><div class="perm-grid"></div><div class="row-actions"></div></div>');
+      $(".rc", el).value = r.color || "#8b7bff"; $(".rn", el).value = r.name;
+      PERMS.forEach(([key, label]) => { const l = html(`<label class="check"><input type="checkbox" data-k="${key}"><span></span></label>`); $("span", l).textContent = label; $("input", l).checked = !!r[key]; $(".perm-grid", el).append(l); });
+      addActions(el, [{ label: "Guardar", primary: true, fn: async () => {
+        const f = { name: $(".rn", el).value.trim() || r.name, color: $(".rc", el).value }; el.querySelectorAll("[data-k]").forEach((i) => (f[i.dataset.k] = i.checked));
+        await api.updateRole(r.id, f); toast("Cargo guardado"); } }, ...(r.is_default ? [] : [{ label: "Apagar", fn: async () => { if (confirm(`Apagar o cargo "${r.name}"?`)) { await api.deleteRole(r.id); reload(); } } }])]);
+      k.append(el);
+    });
+    const nb = html('<button class="btn btn-primary" style="margin-top:6px">+ Novo cargo</button>'); nb.onclick = async () => { await safe(() => api.addRole(c.id)); reload(); }; k.append(nb);
+  }
+
+  if (P.manage_members) {
+    const k = card("Membros");
+    for (const m of await api.communityMembers(c.id)) {
+      const p = m.profiles, el = listRow(p, "@" + p.username, "#/u/" + p.username);
+      if (p.id === c.created_by) { $(".row-actions", el).append(html('<span class="muted">Dono</span>')); }
+      else {
+        const sel = html('<select class="input sel"><option value="">Sem cargo</option></select>');
+        roles.forEach((r) => { const o = html("<option></option>"); o.value = r.id; o.textContent = r.name; sel.append(o); });
+        sel.value = m.role_id || ""; sel.onchange = () => safe(() => api.setMemberRole(c.id, p.id, sel.value ? Number(sel.value) : null));
+        $(".row-actions", el).append(sel);
+        if (p.id !== me.id) addActions(el, [{ label: "Expulsar", fn: async () => { if (confirm(`Expulsar ${p.username}?`)) { await api.leaveCommunity(c.id, p.id); reload(); } } }]);
+      }
+      k.append(el);
+    }
+  }
+}
+
+/* ---- Definições da conta: notificações, microfone e apagar conta ---- */
+async function viewDefinicoes() {
+  const me = await api.me(), prof = await api.profile(me.id);
+  mountPage("perfil", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Definições</h2><a class="btn" href="#/perfil">← Perfil</a></div>
+    <div class="card"><h3>Notificações de mensagens</h3><p class="muted" id="n-state"></p><button class="btn btn-primary" id="n-btn">Ativar notificações</button></div>
+    <div class="card"><h3>Microfone (chamadas)</h3><p class="muted" id="m-state"></p><button class="btn btn-primary" id="m-btn">Testar microfone</button></div>
+    <div class="card"><h3>Zona de perigo</h3><p class="muted">Apagar a conta remove para sempre o teu perfil, publicações, mensagens e as comunidades que criaste.</p><button class="btn btn-danger" id="del-btn">Apagar a minha conta</button></div></main>`, false);
+  const nState = () => {
+    const p = "Notification" in window ? Notification.permission : "unsupported";
+    $("#n-state").textContent = { granted: "Ativas ✓ Aparecem quando o InLog está noutro separador.", denied: "Bloqueadas. Permite-as nas definições do site no navegador.", default: "Ainda não ativadas.", unsupported: "Este navegador não suporta notificações." }[p];
+    $("#n-btn").classList.toggle("hidden", p !== "default");
+  };
+  nState(); $("#n-btn").onclick = async () => { await Notification.requestPermission(); nState(); };
+  const mState = async () => {
+    try { const r = await navigator.permissions.query({ name: "microphone" }); $("#m-state").textContent = { granted: "Permitido ✓", denied: "Bloqueado. Permite-o nas definições do site no navegador.", prompt: "Ainda não permitido." }[r.state]; }
+    catch { $("#m-state").textContent = "Toca em Testar para pedir a permissão."; }
+  };
+  mState();
+  $("#m-btn").onclick = async () => {
+    try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()); toast("Microfone a funcionar ✓"); } catch { toast("Microfone bloqueado ou indisponível."); }
+    mState();
+  };
+  $("#del-btn").onclick = () => { $("#d-confirm").value = ""; $("#delete-dialog").showModal(); };
+  $("#delete-dialog form").onsubmit = async (e) => {
+    if (e.submitter?.value !== "ok") return;
+    if ($("#d-confirm").value.trim() !== prof.username) { e.preventDefault(); return toast("O nome de utilizador não coincide."); }
+    const ok = await safe(async () => { await api.deleteAccount(me.id); return true; });
+    if (ok) { stopListeners(); try { await sb.auth.signOut(); } catch {} toast("Conta apagada."); location.hash = "#/login"; }
+  };
+}
+
+/* ---------- Notificações e chamadas de voz (WebRTC, 1 para 1) ----------
+   O sinal para tocar/atender passa pelo Realtime do Supabase; o áudio vai
+   diretamente entre os dois navegadores. Usa só servidores STUN públicos. */
+let ME = null, msgChannel = null, myCallChannel = null, call = null, incoming = null, callTick = null;
+const ICE = { iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }] };
+
+function systemNotify(title, body, hash, icon) {
+  if (!("Notification" in window) || Notification.permission !== "granted" || !document.hidden) return;
+  const n = new Notification(title, { body, icon: icon || undefined, tag: hash });
+  n.onclick = () => { window.focus(); location.hash = hash; n.close(); };
+}
+
+function startListeners(myId) {
+  if (!msgChannel) msgChannel = sb.channel("inbox").on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async ({ new: m }) => {
+    if (m.sender_id === myId) return;
+    if (location.hash === "#/chat/" + m.conversation_id && !document.hidden) return;   // já estás a ver esta conversa
+    const p = await safe(() => api.profile(m.sender_id)), name = (p && (p.display_name || p.username)) || "Nova mensagem";
+    toast(`${name}: ${m.content.slice(0, 60)}`); systemNotify(name, m.content, "#/chat/" + m.conversation_id, p && p.avatar_url);
+  }).subscribe();
+  if (!myCallChannel) myCallChannel = sb.channel("calls:" + myId).on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload, myId)).subscribe();
+}
+function stopListeners() {
+  for (const k of ["msgChannel", "myCallChannel"]) { const ch = k === "msgChannel" ? msgChannel : myCallChannel; if (ch) sb.removeChannel(ch); }
+  msgChannel = myCallChannel = null; ME = null; if (call) endCall(false);
+}
+
+const openOut = (peerId) => new Promise((res) => { const ch = sb.channel("calls:" + peerId); ch.subscribe((st) => st === "SUBSCRIBED" && res(ch)); });
+const sig = (payload) => call && call.out.send({ type: "broadcast", event: "signal", payload: { ...payload, from: call.me } });
+const getMic = async () => { try { return await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { toast("Sem acesso ao microfone. Permite-o nas definições do site."); return null; } };
+
+function setupPC() {
+  const pc = (call.pc = new RTCPeerConnection(ICE));
+  call.stream.getTracks().forEach((t) => pc.addTrack(t, call.stream));
+  pc.onicecandidate = (e) => e.candidate && sig({ type: "ice", candidate: e.candidate });
+  pc.ontrack = (e) => { const a = $("#remote-audio"); a.srcObject = e.streams[0]; a.play().catch(() => {}); };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "connected") { call.state = "live"; call.t0 = Date.now(); clearTimeout(call.timeout); showCallUI(); }
+    if (pc.connectionState === "failed") { toast("A ligação falhou (a rede pode bloquear chamadas)."); endCall(false); }
+  };
+}
+
+async function startCall(peer, myId) {
+  if (call || incoming) return toast("Já estás numa chamada.");
+  const stream = await getMic(); if (!stream) return;
+  call = { me: myId, peer, stream, state: "calling", pending: [] };
+  call.out = await openOut(peer.id); setupPC();
+  const offer = await call.pc.createOffer(); await call.pc.setLocalDescription(offer);
+  sig({ type: "offer", sdp: offer, name: (ME && (ME.display_name || ME.username)) || "Alguém" });
+  showCallUI(); call.timeout = setTimeout(() => { if (call && call.state === "calling") { toast("Sem resposta."); endCall(true); } }, 35000);
+}
+
+async function acceptCall() {
+  const inc = incoming, stream = await getMic();
+  if (!stream) return declineCall();
+  incoming = null; $("#incoming").classList.add("hidden");
+  call = { me: ME.id, peer: { id: inc.from, name: inc.name }, stream, state: "live", pending: [] };
+  call.out = await openOut(inc.from); setupPC();
+  await call.pc.setRemoteDescription(inc.sdp);
+  for (const c of inc.ice) await call.pc.addIceCandidate(c);
+  const ans = await call.pc.createAnswer(); await call.pc.setLocalDescription(ans);
+  sig({ type: "answer", sdp: ans }); showCallUI();
+}
+async function declineCall() {
+  const inc = incoming; incoming = null; $("#incoming").classList.add("hidden"); if (!inc) return;
+  const ch = await openOut(inc.from); ch.send({ type: "broadcast", event: "signal", payload: { type: "decline", from: ME.id } }); setTimeout(() => sb.removeChannel(ch), 1000);
+}
+function endCall(notify) {
+  if (!call) return;
+  if (notify) sig({ type: "hangup" });
+  clearTimeout(call.timeout); clearInterval(callTick);
+  call.stream.getTracks().forEach((t) => t.stop()); if (call.pc) call.pc.close();
+  const out = call.out; setTimeout(() => sb.removeChannel(out), 1000);
+  call = null; $("#remote-audio").srcObject = null; $("#call-ui").classList.add("hidden");
+}
+function showCallUI() {
+  if (!call) return; $("#call-ui").classList.remove("hidden");
+  const paint = () => { if (!call) return; const s = call.t0 ? Math.floor((Date.now() - call.t0) / 1000) : 0;
+    $("#call-text").textContent = call.state === "live" ? `📞 ${call.peer.name} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `A chamar ${call.peer.name}…`; };
+  paint(); clearInterval(callTick); callTick = setInterval(paint, 1000);
+}
+
+async function onSignal(m, myId) {
+  if (m.type === "offer") {
+    const fr = await api.friendship(myId, m.from);
+    if (!fr || fr.status !== "accepted") return;   // só amigos podem ligar
+    if (call || incoming) { const ch = await openOut(m.from); ch.send({ type: "broadcast", event: "signal", payload: { type: "decline", from: myId } }); return setTimeout(() => sb.removeChannel(ch), 1000); }
+    incoming = { from: m.from, name: m.name, sdp: m.sdp, ice: [] };
+    $("#inc-text").textContent = `📞 ${m.name} está a ligar…`; $("#incoming").classList.remove("hidden");
+    systemNotify("Chamada de " + m.name, "Toca para atender", "#/mensagens");
+    const mark = incoming; setTimeout(() => { if (incoming === mark) { incoming = null; $("#incoming").classList.add("hidden"); toast("Chamada perdida de " + m.name); } }, 35000);
+  } else if (m.type === "ice") {
+    if (call && call.peer.id === m.from) { if (call.pc.remoteDescription) call.pc.addIceCandidate(m.candidate).catch(() => {}); else call.pending.push(m.candidate); }
+    else if (incoming && incoming.from === m.from) incoming.ice.push(m.candidate);
+  } else if (m.type === "answer" && call && call.peer.id === m.from) {
+    await call.pc.setRemoteDescription(m.sdp); for (const c of call.pending) await call.pc.addIceCandidate(c).catch(() => {}); call.pending = [];
+  } else if (m.type === "hangup" || m.type === "decline") {
+    if (incoming && incoming.from === m.from) { incoming = null; $("#incoming").classList.add("hidden"); toast("Chamada perdida"); }
+    else if (call && call.peer.id === m.from) { toast(m.type === "decline" ? "Chamada recusada." : "Chamada terminada."); endCall(false); }
+  }
+}
+(function wireCalls() {
+  $("#call-end").onclick = () => endCall(true); $("#inc-yes").onclick = acceptCall; $("#inc-no").onclick = declineCall;
+  $("#call-mute").onclick = () => { const t = call && call.stream.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; $("#call-mute").textContent = t.enabled ? "🎤" : "🔇"; } };
+})();
 
 /* ---------- 6. ROUTER E ARRANQUE ----------
    Rotas com # (ex.: #/u/maria) porque o GitHub Pages só serve ficheiros estáticos. */
 const routes = { "/": viewFeed, "/login": viewLogin, "/registo": viewRegisto, "/perfil": viewPerfil, "/amigos": viewAmigos, "/mensagens": viewMensagens,
-  "/chat": viewChat, "/comunidades": viewComunidades, "/c": viewComunidade, "/u": viewUser };
+  "/chat": viewChat, "/comunidades": viewComunidades, "/c": viewComunidade, "/u": viewUser,
+  "/cfg": viewCfg, "/convite": viewConvite, "/definicoes": viewDefinicoes };
 const PUBLIC = ["/login", "/registo"];
 
 /* Mostra instruções se o Supabase ainda não estiver configurado */
@@ -840,8 +1157,15 @@ async function router() {
   const path = location.hash.slice(1) || "/";
   const [, root = "", arg = ""] = path.match(/^\/([^/]*)(?:\/(.+))?$/) || [];
   const key = "/" + root, user = await api.me(), isPublic = PUBLIC.includes(key);
-  if (!user && !isPublic) return (location.hash = "#/login");   // exige sessão
+  if (!user) {
+    stopListeners();
+    if (key === "/convite") localStorage.setItem("inlog_invite", arg);   // lembra o convite até a pessoa entrar
+    if (!isPublic) return (location.hash = "#/login");   // exige sessão
+  }
   if (user && isPublic) return (location.hash = "#/");
+  const pend = user && localStorage.getItem("inlog_invite");
+  if (pend) { localStorage.removeItem("inlog_invite"); return (location.hash = "#/convite/" + pend); }
+  if (user) { if (!ME) ME = await safe(() => api.profile(user.id)); startListeners(user.id); }
   composerCommunity = null; window.scrollTo(0, 0);
   await safe(() => (routes[key] || viewFeed)(decodeURIComponent(arg)));
 }
