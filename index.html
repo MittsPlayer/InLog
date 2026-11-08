@@ -164,6 +164,15 @@ textarea.input { resize: vertical; min-height: 110px; }
 .banner { background: var(--surface-2); border: 1px dashed var(--accent); border-radius: var(--r-md); padding: 8px 14px; font-size: 13px; color: var(--muted); text-align: center; }
 body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: radial-gradient(600px 300px at 50% 0, rgba(139,123,255,.16), transparent); }
 .profile-info p { margin: 8px 0 0; }
+.post-text:empty { display: none; }
+.post-img { display: block; width: 100%; max-height: 460px; object-fit: cover; border: 1px solid var(--line); border-radius: var(--r-md); margin: 4px 0 12px; background: var(--surface-2); }
+.act.del { margin-left: auto; }
+.act.del:hover { color: var(--danger); }
+.add-img { margin-top: 12px; font-size: 14px; }
+#img-preview { position: relative; margin-top: 12px; }
+#img-preview img { width: 100%; max-height: 240px; object-fit: cover; border-radius: var(--r-md); }
+#img-preview .btn { position: absolute; top: 8px; right: 8px; padding: 5px 12px; font-size: 13px; background: rgba(13,15,20,.85); }
+.post.removing { opacity: 0; transform: scale(.98); transition: .25s var(--ease); }
 </style>
 </head>
 <body>
@@ -172,7 +181,9 @@ body.auth-mode #app { min-height: 100vh; display: grid; place-items: center; pad
 <!-- Diálogo: nova publicação -->
 <dialog id="composer-dialog"><form method="dialog">
   <h2>Nova publicação</h2>
-  <textarea class="input" maxlength="280" placeholder="O que estás a pensar?" required></textarea>
+  <textarea class="input" maxlength="280" placeholder="O que estás a pensar?"></textarea>
+  <div id="img-preview" class="hidden"><img alt="Pré-visualização"><button type="button" class="btn" id="img-remove">Remover</button></div>
+  <label class="btn add-img" for="p-image">📷 Adicionar imagem</label><input type="file" id="p-image" accept="image/*" class="hidden">
   <div class="dialog-actions">
     <span class="counter">0/280</span>
     <button class="btn" value="cancel" formnovalidate>Cancelar</button>
@@ -244,6 +255,21 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString("pt-PT", { day: "numeric", month: "short" });
 }
 
+/* Reduz a imagem (máx. 1600 px, JPEG) para poupar espaço e acelerar o envio */
+function resizeImage(file, max = 1600) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob((b) => (b ? resolve(b) : reject(new Error("Imagem inválida."))), "image/jpeg", 0.85);
+    };
+    img.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    img.src = url;
+  });
+}
+
 /* Executa uma ação e mostra o erro num aviso em vez de partir a app */
 async function safe(fn) { try { return await fn(); } catch (e) { toast(e.message || "Algo correu mal."); } }
 
@@ -270,12 +296,24 @@ const liveApi = {
     const { error } = await sb.from("profiles").update(fields).eq("id", id); if (error) throw error;
   },
   async posts(myId, userId) {
-    let q = sb.from("posts").select("id,content,created_at,user_id,profiles!posts_user_id_fkey(username,display_name,avatar_url),likes(user_id)").order("created_at", { ascending: false }).limit(50);
+    let q = sb.from("posts").select("id,content,created_at,user_id,image_url,profiles!posts_user_id_fkey(username,display_name,avatar_url),likes(user_id)").order("created_at", { ascending: false }).limit(50);
     if (userId) q = q.eq("user_id", userId);
     const { data, error } = await q; if (error) throw error;
-    return data.map((r) => ({ id: r.id, userId: r.user_id, text: r.content, time: r.created_at, name: r.profiles.display_name || r.profiles.username, username: r.profiles.username, avatar: r.profiles.avatar_url, likes: r.likes.length, liked: r.likes.some((l) => l.user_id === myId) }));
+    return data.map((r) => ({ id: r.id, userId: r.user_id, text: r.content, image: r.image_url, time: r.created_at, name: r.profiles.display_name || r.profiles.username, username: r.profiles.username, avatar: r.profiles.avatar_url, likes: r.likes.length, liked: r.likes.some((l) => l.user_id === myId) }));
   },
-  async createPost(text) { const { error } = await sb.from("posts").insert({ content: text }); if (error) throw error; },
+  async createPost(text, file) {
+    const { data: ses } = await sb.auth.getSession(); const uid = ses.session.user.id; let image_url = null;
+    if (file) { // imagem → Storage (bucket "post-images", pasta = id do utilizador)
+      const blob = await resizeImage(file), path = `${uid}/${Date.now()}.jpg`;
+      const up = await sb.storage.from("post-images").upload(path, blob, { contentType: "image/jpeg" }); if (up.error) throw up.error;
+      image_url = sb.storage.from("post-images").getPublicUrl(path).data.publicUrl;
+    }
+    const { error } = await sb.from("posts").insert({ content: text, image_url }); if (error) throw error;
+  },
+  async deletePost(p) {
+    const { error } = await sb.from("posts").delete().eq("id", p.id); if (error) throw error;
+    if (p.image) await sb.storage.from("post-images").remove([decodeURIComponent(p.image.split("/post-images/")[1])]);
+  },
   async toggleLike(post, myId) {
     const q = sb.from("likes");
     const { error } = post.liked ? await q.delete().match({ post_id: post.id, user_id: myId }) : await q.insert({ post_id: post.id });
@@ -299,12 +337,24 @@ function avatar(name, url, cls = "") {
 /* Publicação. Texto de utilizadores entra sempre com textContent (anti-XSS) */
 function postEl(p, myId) {
   const el = html(`<article class="card post"><div class="post-body">
-    <div class="post-head"><b></b><span class="muted"></span></div><p class="post-text"></p>
-    <div class="actions"><button class="act like"><span class="heart">♥</span> <span class="n"></span></button></div></div></article>`);
+    <div class="post-head"><b></b><span class="muted"></span></div><p class="post-text"></p><img class="post-img hidden" alt="" loading="lazy">
+    <div class="actions"><button class="act like"><span class="heart">♥</span> <span class="n"></span></button><button class="act del hidden" aria-label="Apagar publicação">🗑 Apagar</button></div></div></article>`);
   el.prepend(avatar(p.name, p.avatar));
   $("b", el).textContent = p.name;
   $(".muted", el).textContent = `@${p.username} · ${timeAgo(p.time)}`;
   $(".post-text", el).textContent = p.text;
+  if (p.image) { const im = $(".post-img", el); im.src = p.image; im.classList.remove("hidden"); }
+  // Só o autor vê o botão Apagar (a base de dados também o garante, via RLS)
+  if (p.userId === myId) {
+    const del = $(".del", el); del.classList.remove("hidden");
+    del.addEventListener("click", async () => {
+      if (!confirm("Apagar esta publicação? Não dá para desfazer.")) return;
+      const ok = await safe(async () => { await api.deletePost(p); return true; });
+      if (!ok) return;
+      el.classList.add("removing"); toast("Publicação apagada");
+      setTimeout(() => afterPublish(), 250);
+    });
+  }
   const btn = $(".like", el), paint = () => { btn.classList.toggle("liked", p.liked); $(".n", btn).textContent = p.likes; };
   paint();
   btn.addEventListener("click", async () => {
@@ -336,15 +386,26 @@ function mountPage(page, mainHTML) {
 /* Diálogo de publicar: a vista atual define o que fazer depois de publicar */
 let afterPublish = () => {};
 (function wireComposer() {
-  const dlg = $("#composer-dialog"), ta = $("textarea", dlg);
+  const dlg = $("#composer-dialog"), ta = $("textarea", dlg), fileIn = $("#p-image"), prev = $("#img-preview");
+  let file = null;
+  const clearImg = () => { file = null; fileIn.value = ""; prev.classList.add("hidden"); };
   ta.addEventListener("input", () => ($(".counter", dlg).textContent = `${ta.value.length}/280`));
+  fileIn.addEventListener("change", () => {
+    const f = fileIn.files[0]; if (!f) return;
+    if (!f.type.startsWith("image/")) return toast("Escolhe um ficheiro de imagem.");
+    file = f; $("img", prev).src = URL.createObjectURL(f); prev.classList.remove("hidden");
+  });
+  $("#img-remove").onclick = clearImg;
   document.addEventListener("click", (e) => {
     if (e.target.closest("[data-open-composer]")) { e.preventDefault(); $(".nav")?.classList.remove("open"); dlg.showModal(); ta.focus(); }
   });
   $("form", dlg).addEventListener("submit", async (e) => {
-    if (e.submitter?.value !== "ok" || !ta.value.trim()) return;
-    const ok = await safe(async () => { await api.createPost(ta.value.trim()); return true; });
-    if (ok) { ta.value = ""; $(".counter", dlg).textContent = "0/280"; toast("Publicado"); afterPublish(); }
+    if (e.submitter?.value !== "ok") return;
+    const text = ta.value.trim();
+    if (!text && !file) { e.preventDefault(); return toast("Escreve algo ou adiciona uma imagem."); }
+    toast("A publicar…");
+    const ok = await safe(async () => { await api.createPost(text, file); return true; });
+    if (ok) { ta.value = ""; $(".counter", dlg).textContent = "0/280"; clearImg(); toast("Publicado"); afterPublish(); }
   });
 })();
 
