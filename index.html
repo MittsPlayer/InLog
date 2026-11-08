@@ -284,6 +284,8 @@ const liveApi = {
   async suggestions(myId) { const { data } = await sb.from("profiles").select("id,username,display_name,avatar_url").neq("id", myId).limit(3); return data || []; },
 };
 
+const api = liveApi;
+
 /* ---------- 4. COMPONENTES ---------- */
 const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#8b7bff"/><path d="M10 9v14M16 9v14M22 16h-6" stroke="#12102a" stroke-width="3" stroke-linecap="round"/></svg>`;
 
