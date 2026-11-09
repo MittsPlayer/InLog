@@ -203,6 +203,9 @@ dialog { max-height: 90dvh; overflow-y: auto; }
 .thread-list { display: grid; gap: 12px; } .reply { display: flex; gap: 10px; align-items: flex-start; } .reply .post-text { margin: 2px 0 0; }
 .thread-form { display: flex; gap: 8px; } .thread-form .btn { padding: 8px 14px; flex: none; }
 .act.cmt.on { color: var(--accent); }
+/* Código de recuperação */
+.codebox { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 20px; letter-spacing: .06em; text-align: center; padding: 14px; margin: 12px 0 6px; background: var(--surface-2); border: 1px dashed var(--accent); border-radius: var(--r-md); user-select: all; word-break: break-all; }
+.tips { padding-left: 18px; margin: 10px 0 14px; color: var(--muted); font-size: 14px; display: grid; gap: 6px; }
 /* Ícones (máscaras: mudam de cor com o tema) */
 .ic { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -.2em; background-color: currentColor; -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
 .ic-phone { -webkit-mask-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAKyUlEQVR42u2da4xdVRXHf/feqbSVKVZMS6dqDak2iDCt9YG0PrGgUi0JRiOYYGJijK9EfIaoaEw0Pr5gNMSCIfrBgIFaKhWTVnmmIiI6poXSirTO0CqIRQbHtnPuvX7Ya3n3HM8d5z7O2fvcWSs5mTN93HvOXv/9X/+99tp7V+jNqnIl3p8NAauBNcC5wApgJXAa8BygCUwCh4G/Aj8A/gJU5O/MSmBVoOb9/jzgEuA6YB9wXJw5l+uQAKYin2sWufmOPxu4BjiS4di6MEMi9+krAU7Iv70747PNIrOKXAAvAa5P9fQEmBbnNjpggGn5eZmBIG7KV7sSOJZyYCcOz2KKBjAODMt3VazJ46P804Fb++j4LBb4hrFAnM5/KbA/B8fr1RAmOC6jBxOEETl/FDia6ql5XIn8/LmxQDwx/0xP4Sc5Oj8NgncaCMKq/SpwKvBwgc73BeEBYJEAwARhIOq/sQDan00QfkGeY8hcUrzzrxAnnCzY+b4gnARWmSAsNu5XgOXAP2hl7JoBLg05N5kWKL73bw1E/e1A8BYDQXG9/yy6S+fmJQibwBhuFtEEYQG9/7pIen+aBT5pgjD/Mf+ICK9GBL0/LQifxtUUmCDMwfnaoJfJ2L8eEdVqkchpwNfk3sJATomfsYKTPp2GggawwQRhPnZOZNTfTgs8IM43APRZ/V8oP+sRi9Q6sB74oNybIOyj7YyY/v1hYR14ElebYIUjfbJhYMJT3c2ILwXotaYF+mfnlcDxaRAkwDoDQX80wMuEShslS1x9JzWSMesSAKNy3yyR8+vARuByuTcW6AEAq0uau9Ai0ucKexkLdAmAVSWk0ao4fSXwTbm3FHGX9khJRgBZ8wQ6KthogrB7+1fJHJ9VPvYLjxnMuoilZTWdHDqBW7sw7oUHsznG0rIDuAGcgluKbkPCeQYAPO2yzAAwPwGgcwJHS5bPMAD0SQNUgSlcPYMBoAsAlLnBlP7vEQYwAdgFAI6UuOfoKOBbFv+7B8CxkgJgGlcU8mPgl7TmCMw6tPuYWYdfpgTQAVzBqBWH9MAAB0rGAIn0/HHgHcA/Tfz1BoA/l+h51fljuCVjfxLqN+HXg11aghDgL1TdhitjA5v86YutI+5iUP/Zrh6gHEY0NizxNEYWULE3IfEeE3z52C7iKgtveGDcidtvGGwtQC4iEODBiJS0lndVgS8DF+OyfDVmbkpt1kfbHAkDaK+fTFG+xfucbYRWZVCo0jBdmzgJvF6ea4G5prgwsCcgC2jMT4BN5vxina9j6d0BdUBdnuX7IkgXyAjArABTALwmYAhQ+l/L/x5GYZYzA+iOIGPAoxS/TEyndJu4rWAaWF6/8Phfw1XW7vSGYkWZAq4KvNj7M7MAYeB8wmQEVXjuSj2PWcE9cQjYGxgEWwwEYUzTrFcRZq9A3ZzyEWyn8KB6YBWtw6AagVjgqhQozQoGwU/F+UWzgCaEnsV2Cg8qBt9KuOlhZYHtpgXCscAQ8HtmLsEOAYJ3GwjCicH3E25uQEvAHgeWYkUghQ8HK8BC4DFmFmeEYIHrTRCGY4FPELZOQEXouywUhGGBU3H1gqFYQHMDR4AXYMUhQVjgI4Q9RELZ52YLBcWzQFW0wMGALOCD70MGgjB5gfcF1gIKvingFaYHis8LVIDfBAaBss9DuM0hbWhYMAu8gfCVw/rdN1oo6K9zZ7Om/LtDuKPdz6VVwxeCjRJ5hingXlz9oC0OLSgMvBC3HDvkuYL+JNUlxgTFs8XHAg8L/fzAs7jzjkwUFgiCagSC0BeFE8CLDATFssAo7mTxhLCbTCsAfwcs8cKVWQEZwq9EEAr8779LhocGggIyhDVR338gjkWlCoI7cfWEBoKCQsG6SEKBD4JdHghqkXagIVpFr9qhhsqW2NJQ8JlIQoH/DHd44aAWGXPOpXNVinyoXl8owR3YcBFxHOCkO4ndK3mCp+T3kJtL+FvYjuA25noTcIb83Thuce524AkPCNFvfKkJohW4Ez1DzhhmMcEYcGbgZJF2iIXAVwWQ7Z77CeDzwGKvk0WvZfQF3+Y1fiMiEDyOW/kcAgT6fWcB96eeLUldfgh9CHhPqLDQy4teHZEe8EcnU8B7C25M7RivFHZsimCerXOk12Lsxp3s6rdzJXYQbI8MBH5I+mKGg/J0/qs8yp/u8JkTDxRbaa2cjjbjqfV6w7SOootx27ltuPrCvEKCOmcN8Pce28EfXj8l+mBhqr2j1APnCO3WiWvzSe2FB4E35yC09LOW0Fpl3Y9O4H/GXloLZqIMCwqCLZGJwjQI6hISKn1ig4r3GdtyCINpfXA7sD5WIKSTRCcjAoA/ndwEfiV03SutLkgJ4ZPku2pKAfZdWjupRqUPFAQ3RCYKs9jgaVz5e7e9Sd91U4Gs54eFvwFX4s5PjEYfaKawCuyIGAR+Q+6S+Y1OelPVy/AdDZAM89v0j7SqpKLIH+hkx2LgtxGDwF8FfQJ3LP3SOeTwq95Ezp0BRz7pVdw7JP9A4CzojB6yHNgX2fBwNjZ4DPhAxjDX7136+48iAXdaH1wj7d7JZFSuI4NVtM4miBUEabV9D3BBRq/X+60RMpvftkeAjzNzS8CgonAtrrI4ZhCks3FN4BZvTkHf447I38MH5f0ekIOD4HwPBLEfV5cudtktYnG6BCDOYrTPxQSCZ0oCgnaOLtNZi4n3Dp+KBQQbcOcDlKUxG15DNkrk/Cw22BBLomhjicLBIFzKAnuAaiUCECQSDm6XSZQYysoG3XRz7gtqETzIEHBYcvJbZDo51OLT+QaA47VIHkbPAt6B26RymTCDgSDnVH1M88haBbscuA1XTZNgK3/ztGOxPZAy0pLUBFIZFXcprtjEVlNjE24XkDO87JseLWOWQ4+LDQQ6i/gz3HmGm2idb2S6oH82GbtI0fi/GVe0Eet0ctkuzbfsjbk3NT0ReJtkrvZ5uQM7Way3tgU4WAY6TSRU7QNeB9zkMYNtDtWb3VVWvfJZjwUsJHQ/VTxayuSF3G8E9nuhwuYROpsLeAColk1Rq4DR5d+vxVXkaHlWYqw+5/h/c9lDqB8StuBq+NJ1cXZln9E8hdvzsfTmh4TTcaeLNC2D+H9LxH4YcR6oZza4mNa6vDKUbBVdzHISOJvAVcJ5s8Fi4Ou0lmclxgb/7f1bB633z8YG63EFnM15PmRUXfQkbqp94Lfa99PIAB/GrZ/LWkUzn3r/pYPe+9Pmr+YZEfqrz7PcgYbBb0s7zMv6Cv+lz8sIC40Bd/4tXs+ft1PqadV7OfDwgALBL/++Fbd3gR2xkxEWFuPW1Y8PEBB8fXMtM7ekNWszWng+8CXcRo3NkmoEfy3jFG5BKOb8zkYLK3C7eU5kNGyjBI7XtYujFvN70wdLgY/itppND6fqEYChnhGq9gNXtBG+Zl0yQg14O/AT3PlEaTAUxQyau5jOCEu/xm1ksch7B6ub7DMjgNt0+tPAfRmJpLoHiF4ZouHR+nQbHfIo8D3gjbPomjm/qNns7aO9yd+6/eW4SafNuE2lhjP+r++wdu3dbPNdaZvCTXDdjduafw/w75TjG3RRJ2kA6Hz4mC46GcHtFvJqudYAKz1K7tSewdU2HBCnPyhaZLxNb6/3inCz7sFQz+h1i3DFFqtleLkWt7/vMrlO8YZqh6UnH5L7o/JzYpaw1Oy2t2fZfwBJ5Umh4hYSBwAAAABJRU5ErkJggg==); mask-image: url(data:image/png;base64,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); }
@@ -290,6 +293,22 @@ input[type=color] { width: 46px; height: 46px; flex: none; padding: 3px; backgro
   <div class="field" style="margin-top:12px"><label for="e-frame">Moldura do avatar</label><select class="input" id="e-frame"></select></div>
   <div class="field"><label for="e-fx">Efeito do perfil</label><select class="input" id="e-fx"></select></div>
   <div class="dialog-actions"><button class="btn" value="cancel" formnovalidate>Cancelar</button><button class="btn btn-primary" value="ok">Guardar</button></div>
+</form></dialog>
+
+<!-- Diálogo: código de recuperação (mostrado uma só vez) -->
+<dialog id="recovery-dialog"><form method="dialog">
+  <h2>Guarda o teu código de recuperação</h2>
+  <p class="muted">O InLog não usa email. Se esqueceres a palavra-passe, <b>este código é a única forma de recuperar a tua conta</b>. Ele só aparece agora.</p>
+  <div class="codebox" id="rc-code"></div>
+  <div class="row-actions" style="justify-content:flex-start"><button type="button" class="btn btn-primary" id="rc-copy">Copiar</button><button type="button" class="btn" id="rc-save">Descarregar .txt</button></div>
+  <ul class="tips">
+    <li>Guarda-o num sítio onde te lembres: notas do telemóvel, gestor de palavras-passe ou escrito num papel.</li>
+    <li><b>Dica:</b> toca em <b>Copiar</b> e fixa o código na área de transferência do teclado (mantém premido o item copiado e toca em <b>Fixar</b>; depende do teclado).</li>
+    <li>Não partilhes o código com ninguém: quem o tiver pode mudar a tua palavra-passe.</li>
+    <li>Perdeste-o? Em Definições podes gerar um novo (o antigo deixa de funcionar).</li>
+  </ul>
+  <label class="check"><input type="checkbox" id="rc-ok"><span>Guardei o código num lugar seguro</span></label>
+  <div class="dialog-actions"><button class="btn btn-primary" value="ok" id="rc-done" disabled>Continuar</button></div>
 </form></dialog>
 
 <!-- Diálogo: novo grupo -->
@@ -469,6 +488,10 @@ const liveApi = {
     }
     const { error } = await sb.from("profiles").update(fields).eq("id", id); if (error) throw error;
   },
+  /* ----- Código de recuperação (substitui o email) ----- */
+  async hasRecoveryCode() { const { data, error } = await sb.rpc("has_recovery_code"); if (error) throw error; return !!data; },
+  async generateRecoveryCode() { const { data, error } = await sb.rpc("generate_recovery_code"); if (error) throw error; return data; },
+  async resetWithCode(username, code, password) { const { data, error } = await sb.rpc("reset_password_with_code", { p_username: username, p_code: code, p_new_password: password }); if (error) throw error; return data; },
   async comments(postId) { const { data, error } = await sb.from("comments").select("id,user_id,content,created_at,profiles(username,display_name,avatar_url,avatar_frame)").eq("post_id", postId).order("created_at").limit(100); if (error) throw error; return data; },
   async addComment(postId, text) { const { error } = await sb.from("comments").insert({ post_id: postId, content: text }); if (error) throw error; },
   async deleteComment(id) { const { error } = await sb.from("comments").delete().eq("id", id); if (error) throw error; },
@@ -775,11 +798,30 @@ const field = (id, label, type = "text", ac = "") => `<div class="field"><label 
 function viewLogin() {
   const form = authView("Bem-vindo de volta", "Entra para ver o que há de novo.",
     field("email", "Email", "email", "email") + field("password", "Palavra-passe", "password", "current-password"),
-    "Iniciar sessão", 'Ainda não tens conta? <a href="#/registo">Criar conta</a>');
+    "Iniciar sessão", 'Ainda não tens conta? <a href="#/registo">Criar conta</a><br><a href="#/recuperar" style="font-weight:600">Esqueci a palavra-passe</a>');
   form.onsubmit = async (e) => {
     e.preventDefault();
     try { await api.signIn($("#email").value.trim(), $("#password").value); location.hash = "#/"; }
     catch (err) { $("#form-error").textContent = "Email ou palavra-passe incorretos."; }
+  };
+}
+
+function viewRecuperar() {
+  const form = authView("Recuperar conta", "Usa o código de recuperação que guardaste ao criar a conta.",
+    field("username", "Nome de utilizador", "text", "username") + field("rcode", "Código de recuperação", "text", "off") +
+    field("password", "Nova palavra-passe", "password", "new-password") + field("confirm", "Confirmar palavra-passe", "password", "new-password"),
+    "Redefinir palavra-passe", 'Lembraste-te? <a href="#/login">Iniciar sessão</a>');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const err = $("#form-error"), pw = $("#password").value;
+    if (pw.length < 6) return (err.textContent = "A palavra-passe precisa de pelo menos 6 caracteres.");
+    if (pw !== $("#confirm").value) return (err.textContent = "As palavras-passe não coincidem.");
+    err.textContent = "";
+    try {
+      const r = await api.resetWithCode($("#username").value.trim(), $("#rcode").value, pw);
+      if (r.status === "ok") { toast("Palavra-passe alterada."); showRecoveryCode(r.new_code, () => (location.hash = "#/login")); }   // o código antigo deixa de valer: mostra o novo
+      else err.textContent = { invalid: "Utilizador ou código incorretos.", locked: "Demasiadas tentativas. Tenta de novo daqui a 15 minutos.", weak: "A palavra-passe é demasiado curta." }[r.status] || "Não foi possível redefinir.";
+    } catch (ex) { err.textContent = ex.message; }
   };
 }
 
@@ -842,6 +884,22 @@ async function viewPerfil() {
     });
     if (ok) { prof = await api.profile(me.id); draw(); toast("Perfil atualizado"); }
   };
+}
+
+/* ---- Código de recuperação: mostra o código uma vez, com guia para o guardar ---- */
+function showRecoveryCode(code, onDone) {
+  const dlg = $("#recovery-dialog");
+  $("#rc-code").textContent = code; $("#rc-ok").checked = false; $("#rc-done").disabled = true;
+  $("#rc-ok").onchange = (e) => ($("#rc-done").disabled = !e.target.checked);
+  $("#rc-copy").onclick = async () => { try { await navigator.clipboard.writeText(code); toast("Código copiado. Fixa-o na área de transferência."); } catch { toast("Não deu para copiar: seleciona o código e copia."); } };
+  $("#rc-save").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([`InLog — código de recuperação\n\n${code}\n\nGuarda este ficheiro num lugar seguro. Não o partilhes.\n`], { type: "text/plain" }));
+    a.download = "inlog-codigo-recuperacao.txt"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  dlg.oncancel = (e) => e.preventDefault();   // não deixa fechar sem confirmar que guardou
+  dlg.onclose = () => { if (onDone) onDone(); };
+  dlg.showModal();
 }
 
 /* ---- Utilitários das novas vistas ---- */
@@ -1177,6 +1235,7 @@ async function viewDefinicoes() {
     <div class="card"><h3>Privacidade</h3>
       <div class="field"><label for="priv-posts">Quem pode ver as minhas publicações</label><select class="input" id="priv-posts"><option value="everyone">Todos</option><option value="friends">Só amigos</option><option value="only_me">Só eu</option></select></div>
       <label class="check"><input type="checkbox" id="priv-req"><span>Aceitar pedidos de amizade</span></label></div>
+    <div class="card"><h3>Código de recuperação</h3><p class="muted">Serve para recuperar a conta se esqueceres a palavra-passe. Gerar um novo invalida o anterior.</p><button class="btn" id="rc-new">Gerar novo código</button></div>
     <div class="card"><h3>Notificações de mensagens</h3><p class="muted" id="n-state"></p><button class="btn btn-primary" id="n-btn">Ativar notificações</button><button class="btn hidden" id="n-test">Enviar notificação de teste</button></div>
     <div class="card"><h3>Microfone (chamadas)</h3><p class="muted" id="m-state"></p><button class="btn btn-primary" id="m-btn">Testar microfone</button></div>
     <div class="card"><h3>Zona de perigo</h3><p class="muted">Apagar a conta remove para sempre o teu perfil, publicações, mensagens e as comunidades que criaste.</p><button class="btn btn-danger" id="del-btn">Apagar a minha conta</button></div></main>`, false);
@@ -1190,6 +1249,10 @@ async function viewDefinicoes() {
   paintOpts();
   $("#reduce").checked = !!localStorage.getItem("inlog_reduce");
   $("#reduce").onchange = (e) => { e.target.checked ? localStorage.setItem("inlog_reduce", "1") : localStorage.removeItem("inlog_reduce"); applyTheme(); };
+  $("#rc-new").onclick = async () => {
+    if (!confirm("Gerar um novo código? O código antigo deixa de funcionar.")) return;
+    const code = await safe(() => api.generateRecoveryCode()); if (code) showRecoveryCode(code);
+  };
   // Privacidade (guardada na conta)
   $("#priv-posts").value = prof.post_visibility || "everyone"; $("#priv-req").checked = prof.allow_friend_requests !== false;
   const savePriv = () => safe(async () => { await api.updateProfile(me.id, { post_visibility: $("#priv-posts").value, allow_friend_requests: $("#priv-req").checked }); toast("Privacidade guardada"); });
@@ -1224,6 +1287,7 @@ async function viewDefinicoes() {
    diretamente entre os dois navegadores. Usa só servidores STUN públicos. */
 let liveChannel = null, onLive = null, liveTimer = null;
 const pokeLive = (table) => { clearTimeout(liveTimer); liveTimer = setTimeout(() => onLive && onLive(table), 500); };   // evita recarregar em rajada
+let recoveryChecked = false;
 let ME = null, msgChannel = null, myCallChannel = null, call = null, incoming = null, callTick = null;
 const ICE = { iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }, ...TURN_SERVERS], iceCandidatePoolSize: 2 };
 
@@ -1256,6 +1320,7 @@ function startListeners(myId) {
   if (!myCallChannel) myCallChannel = sb.channel("calls:" + myId).on("broadcast", { event: "signal" }, ({ payload }) => onSignal(payload, myId)).subscribe();
 }
 function stopListeners() {
+  recoveryChecked = false;
   for (const ch of [msgChannel, myCallChannel, liveChannel]) if (ch) sb.removeChannel(ch);
   msgChannel = myCallChannel = liveChannel = null; onLive = null; ME = null; if (call) endCall(false);
 }
@@ -1353,10 +1418,10 @@ async function onSignal(m, myId) {
 
 /* ---------- 6. ROUTER E ARRANQUE ----------
    Rotas com # (ex.: #/u/maria) porque o GitHub Pages só serve ficheiros estáticos. */
-const routes = { "/": viewFeed, "/login": viewLogin, "/registo": viewRegisto, "/perfil": viewPerfil, "/amigos": viewAmigos, "/mensagens": viewMensagens,
+const routes = { "/": viewFeed, "/login": viewLogin, "/registo": viewRegisto, "/recuperar": viewRecuperar, "/perfil": viewPerfil, "/amigos": viewAmigos, "/mensagens": viewMensagens,
   "/chat": viewChat, "/comunidades": viewComunidades, "/c": viewComunidade, "/u": viewUser,
   "/cfg": viewCfg, "/convite": viewConvite, "/definicoes": viewDefinicoes };
-const PUBLIC = ["/login", "/registo"];
+const PUBLIC = ["/login", "/registo", "/recuperar"];
 
 /* Mostra instruções se o Supabase ainda não estiver configurado */
 function viewSetup() {
@@ -1381,6 +1446,10 @@ async function router() {
   const pend = user && localStorage.getItem("inlog_invite");
   if (pend) { localStorage.removeItem("inlog_invite"); return (location.hash = "#/convite/" + pend); }
   if (user) { if (!ME) ME = await safe(() => api.profile(user.id)); startListeners(user.id); }
+  if (user && !recoveryChecked) {   // quem ainda não tem código de recuperação recebe um agora
+    recoveryChecked = true;
+    if ((await safe(() => api.hasRecoveryCode())) === false) { const code = await safe(() => api.generateRecoveryCode()); if (code) showRecoveryCode(code); }
+  }
   composerCommunity = null; onLive = null; window.scrollTo(0, 0);
   await safe(() => (routes[key] || viewFeed)(decodeURIComponent(arg)));
 }
