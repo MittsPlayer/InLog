@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>InLog</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="InLog">
 <meta name="theme-color" content="#0d0f14" id="meta-theme">
 <script>try{var m=localStorage.getItem("inlog_theme")||"dark",d=m==="dark"||(m==="auto"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light";var a=localStorage.getItem("inlog_accent");if(a)document.documentElement.style.setProperty("--accent",a);if(localStorage.getItem("inlog_reduce"))document.documentElement.classList.add("reduce")}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -559,9 +565,9 @@ const liveApi = {
 
   /* ----- Conversas privadas e grupos ----- */
   async conversations(myId) {
-    const { data, error } = await sb.from("conversation_members").select("conversations(id,type,name,last_message_at)").eq("user_id", myId);
+    const { data, error } = await sb.from("conversation_members").select("cleared_at,conversations(id,type,name,last_message_at)").eq("user_id", myId);
     if (error) throw error;
-    const convs = data.map((r) => r.conversations).sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
+    const convs = data.map((r) => ({ ...r.conversations, cleared_at: r.cleared_at })).sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
     if (!convs.length) return [];
     const { data: mem } = await sb.from("conversation_members").select("conversation_id,profiles(id,username,display_name,avatar_url,avatar_frame)").in("conversation_id", convs.map((c) => c.id));
     return convs.map((c) => ({ ...c, members: mem.filter((m) => m.conversation_id === c.id).map((m) => m.profiles) }));
@@ -570,7 +576,12 @@ const liveApi = {
   async startDM(other) { const { data, error } = await sb.rpc("start_dm", { other }); if (error) throw error; return data; },
   async createGroup(name, ids) { const { data, error } = await sb.rpc("create_group", { group_name: name, member_ids: ids }); if (error) throw error; return data; },
   async leaveConversation(id, myId) { const { error } = await sb.from("conversation_members").delete().match({ conversation_id: id, user_id: myId }); if (error) throw error; },
-  async messages(id) { const { data, error } = await sb.from("messages").select("id,sender_id,content,created_at").eq("conversation_id", id).order("created_at").limit(200); if (error) throw error; return data; },
+  async messages(id, since) {   // "since" = data em que apaguei a conversa (só mostra o que veio depois)
+    let q = sb.from("messages").select("id,sender_id,content,created_at").eq("conversation_id", id).order("created_at").limit(200);
+    if (since) q = q.gt("created_at", since);
+    const { data, error } = await q; if (error) throw error; return data;
+  },
+  async clearConversation(id) { const { error } = await sb.rpc("clear_conversation", { cid: id }); if (error) throw error; },
   async sendMessage(id, text) { const { error } = await sb.from("messages").insert({ conversation_id: id, content: text }); if (error) throw error; },
 
   /* ----- Comunidades, canais, cargos e convites ----- */
@@ -988,7 +999,8 @@ async function viewAmigos() {
       { label: "Aceitar", primary: true, fn: async () => { await api.acceptRequest(r.fid); load(); } },
       { label: "Recusar", fn: async () => { await api.deleteFriendship(r.fid); load(); } }])));
     $("#friends").replaceChildren(...(fr.length ? fr.map((r) => listRow(r.other, "@" + r.other.username, "#/u/" + r.other.username, [
-      { label: "Mensagem", primary: true, fn: async () => { location.hash = "#/chat/" + (await api.startDM(r.other.id)); } }])) : [note("Ainda não tens amigos. Procura pessoas acima!")]));
+      { label: "Mensagem", primary: true, fn: async () => { location.hash = "#/chat/" + (await api.startDM(r.other.id)); } },
+      { label: "Remover", fn: async () => { if (confirm(`Deixar de ser amigo de ${r.other.display_name || r.other.username}?`)) { await api.deleteFriendship(r.fid); load(); } } }])) : [note("Ainda não tens amigos. Procura pessoas acima!")]));
   };
   load();
   let t;
@@ -1009,11 +1021,18 @@ const convTitle = (c, myId) => (c.type === "group" ? c.name : (c.members.find((m
 async function viewMensagens() {
   const me = await api.me();
   mountPage("mensagens", `<main class="page"><div class="ptitle-row"><h2 class="ptitle">Mensagens</h2><button class="btn btn-primary" id="new-group">Novo grupo</button></div><div class="card" id="convs"></div></main>`);
-  const convs = await safe(() => api.conversations(me.id)) || [];
-  $("#convs").replaceChildren(...(convs.length ? convs.map((c) => {
-    const other = c.type === "dm" ? c.members.find((m) => m.id !== me.id) || {} : {};
-    return listRow({ name: convTitle(c, me.id), avatar_url: other.avatar_url }, c.type === "group" ? `Grupo · ${c.members.length} membros` : "Conversa privada", "#/chat/" + c.id);
-  }) : [note('Sem conversas ainda. Abre a página <a href="#/amigos" style="color:var(--accent)">Amigos</a> e envia uma mensagem a alguém.')]));
+  const load = async () => {
+    const all = (await safe(() => api.conversations(me.id))) || [];
+    const convs = all.filter((c) => !c.cleared_at || new Date(c.last_message_at) > new Date(c.cleared_at));   // esconde as que apaguei (voltam se chegar mensagem nova)
+    $("#convs").replaceChildren(...(convs.length ? convs.map((c) => {
+      const other = c.type === "dm" ? c.members.find((m) => m.id !== me.id) || {} : {};
+      const dm = c.type === "dm";
+      return listRow({ name: dm && !other.id ? "Conta apagada" : convTitle(c, me.id), avatar_url: other.avatar_url, avatar_frame: other.avatar_frame }, dm ? "Conversa privada" : `Grupo · ${c.members.length} membros`, "#/chat/" + c.id, [
+        dm ? { label: "Apagar", icon: "trash", fn: async () => { if (confirm("Apagar esta conversa? Só desaparece para ti.")) { await api.clearConversation(c.id); load(); } } }
+           : { label: "Sair", fn: async () => { if (confirm("Sair deste grupo?")) { await api.leaveConversation(c.id, me.id); load(); } } }]);
+    }) : [note('Sem conversas ainda. Abre a página <a href="#/amigos" style="color:var(--accent)">Amigos</a> e envia uma mensagem a alguém.')]));
+  };
+  load();
 
   $("#new-group").onclick = async () => {
     const fr = (await safe(() => api.friends(me.id)) || []).filter((r) => r.status === "accepted");
@@ -1044,7 +1063,7 @@ function setLinked(el, text) {
   });
 }
 
-async function chatPanel(host, { table, col, id, myId, nameOf, fetchFn, sendFn }) {
+async function chatPanel(host, { table, col, id, myId, nameOf, fetchFn, sendFn, blocked }) {
   host.innerHTML = '<div class="msgs"></div><form class="chat-form"><input class="input" maxlength="1000" placeholder="Escreve uma mensagem…" autocomplete="off"><button class="btn btn-primary">Enviar</button></form>';
   const box = $(".msgs", host), seen = new Set();
   const add = (m) => {
@@ -1057,7 +1076,9 @@ async function chatPanel(host, { table, col, id, myId, nameOf, fetchFn, sendFn }
   const sync = async () => ((await safe(fetchFn)) || []).forEach(add);
   await sync();
   chatChannel = sb.channel(`${table}-${id}`).on("postgres_changes", { event: "INSERT", schema: "public", table, filter: `${col}=eq.${id}` }, (pl) => add(pl.new)).subscribe();
-  $("form", host).onsubmit = async (e) => {
+  const form = $("form", host);
+  if (blocked) { const n = html('<p class="muted" style="padding:14px 0;text-align:center"></p>'); n.textContent = blocked; form.replaceWith(n); return; }   // sem caixa de escrita
+  form.onsubmit = async (e) => {
     e.preventDefault();
     const inp = $("input", host), text = inp.value.trim(); if (!text) return;
     inp.value = ""; await safe(() => sendFn(text)); setTimeout(sync, 700);   // plano B se o tempo real falhar
@@ -1069,16 +1090,26 @@ async function viewChat(id) {
   if (!conv) return mountPage("mensagens", '<main class="page"><div class="card empty">Conversa não encontrada.</div></main>', false);
   const who = Object.fromEntries(conv.members.map((m) => [m.id, m])), isGroup = conv.type === "group", other = conv.members.find((m) => m.id !== me.id);
   mountPage("mensagens", `<main class="chat"><div class="chat-head"><a href="#/mensagens" class="btn">←</a><b id="c-title"></b>
-    <button class="btn hidden" id="call-btn" aria-label="Ligar"><i class="ic ic-phone"></i> Ligar</button><button class="btn hidden" id="leave">Sair do grupo</button></div><div class="chat-host" id="chat-host"></div></main>`, false);
+    <button class="btn hidden" id="call-btn" aria-label="Ligar"><i class="ic ic-phone"></i> Ligar</button><button class="btn hidden" id="clear-btn" aria-label="Apagar conversa"><i class="ic ic-trash"></i></button><button class="btn hidden" id="leave">Sair do grupo</button></div><div class="chat-host" id="chat-host"></div></main>`, false);
   const title = convTitle(conv, me.id); $("#c-title").textContent = title;
   if (isGroup) {
     $("#leave").classList.remove("hidden");
     $("#leave").onclick = async () => { if (confirm("Sair deste grupo?")) { await safe(() => api.leaveConversation(id, me.id)); location.hash = "#/mensagens"; } };
-  } else if (other) {
-    $("#call-btn").classList.remove("hidden"); $("#call-btn").onclick = () => startCall({ id: other.id, name: title }, me.id);
+  } else {
+    $("#clear-btn").classList.remove("hidden");
+    $("#clear-btn").onclick = async () => { if (confirm("Apagar esta conversa? Só desaparece para ti; a outra pessoa mantém a dela.")) { await safe(() => api.clearConversation(id)); location.hash = "#/mensagens"; } };
+  }
+  let blocked = "";   // conversa privada só com quem ainda é amigo e tem conta
+  if (!isGroup) {
+    if (!other) blocked = "Esta conta foi apagada. Já não é possível enviar mensagens.";
+    else {
+      const fr = await api.friendship(me.id, other.id);
+      if (!fr || fr.status !== "accepted") blocked = "Já não são amigos, por isso não podes enviar mensagens.";
+      else { $("#call-btn").classList.remove("hidden"); $("#call-btn").onclick = () => startCall({ id: other.id, name: title }, me.id); }
+    }
   }
   await chatPanel($("#chat-host"), { table: "messages", col: "conversation_id", id, myId: me.id,
-    nameOf: isGroup ? (u) => (who[u] || {}).display_name || "Ex-membro" : null, fetchFn: () => api.messages(id), sendFn: (t) => api.sendMessage(id, t) });
+    nameOf: isGroup ? (u) => (who[u] || {}).display_name || "Ex-membro" : null, fetchFn: () => api.messages(id, conv.cleared_at), sendFn: (t) => api.sendMessage(id, t), blocked });
 }
 
 /* ---- Comunidades: lista, página com canais, convites e definições ---- */
