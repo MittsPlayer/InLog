@@ -212,6 +212,9 @@ dialog { max-height: 90dvh; overflow-y: auto; }
 /* Código de recuperação */
 .codebox { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 20px; letter-spacing: .06em; text-align: center; padding: 14px; margin: 12px 0 6px; background: var(--surface-2); border: 1px dashed var(--accent); border-radius: var(--r-md); user-select: all; word-break: break-all; }
 .tips { padding-left: 18px; margin: 10px 0 14px; color: var(--muted); font-size: 14px; display: grid; gap: 6px; }
+/* Corrige páginas que alargavam com texto longo (ex.: avisos grandes no painel) */
+.page { grid-template-columns: minmax(0, 1fr); } .page > * { min-width: 0; }
+.list-item .grow.wrap > * { white-space: normal; overflow-wrap: anywhere; }
 /* Avisos e notícias (topo da página inicial) */
 .ann { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-lg); border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); animation: enter .3s var(--ease) both; }
 .ann.ann-alert { border-color: #f5b82e; background: color-mix(in srgb, #f5b82e 16%, var(--surface)); }
@@ -519,6 +522,13 @@ const liveApi = {
   },
   async adminSetBadge(uid, badge) { const { error } = await sb.rpc("admin_set_badge", { uid, new_badge: badge }); if (error) throw error; },
   async adminBan(uid, reason) { const { error } = await sb.rpc("admin_ban", { uid, reason }); if (error) throw error; },
+  async adminBanPermanent(uid, reason) {   // apaga ficheiros, mensagens e a própria conta
+    for (const b of ["avatars", "post-images", "banners"]) {
+      const { data } = await sb.storage.from(b).list(uid);
+      if (data && data.length) await sb.storage.from(b).remove(data.map((f) => `${uid}/${f.name}`));
+    }
+    const { error } = await sb.rpc("admin_ban_permanent", { uid, reason }); if (error) throw error;
+  },
   async adminUnban(uid) { const { error } = await sb.rpc("admin_unban", { uid }); if (error) throw error; },
   async activeAnnouncements() { const { data, error } = await sb.from("announcements").select("id,kind,body,created_at,expires_at").gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }); if (error) throw error; return data; },
   async postAnnouncement(body, kind, minutes) { const { error } = await sb.rpc("post_announcement", { p_body: body, p_kind: kind, p_minutes: minutes }); if (error) throw error; },
@@ -894,7 +904,7 @@ function viewRegisto() {
     try {
       const r = await api.signUp(user, $("#email").value.trim(), pw);
       if (r.needsConfirm) { toast("Conta criada! Confirma o teu email para entrar."); location.hash = "#/login"; } else location.hash = "#/";
-    } catch (ex) { err.textContent = ex.message; }
+    } catch (ex) { err.textContent = /database error|banid/i.test(ex.message || "") ? "Não foi possível criar a conta com este email." : ex.message; }
   };
 }
 
@@ -963,7 +973,7 @@ async function viewAdmin() {
     $("#ad-stats").innerHTML = [[st.users, "utilizadores"], [st.posts, "publicações"], [st.verified, "verificados"], [st.banned, "banidos"]].map(([n, l]) => `<div><b>${n}</b> <span class="muted">${l}</span></div>`).join(""); };
   const anns = async () => {
     const list = (await safe(() => api.activeAnnouncements())) || [];
-    $("#ad-anns").replaceChildren(...(list.length ? list.map((a) => { const r = html('<div class="list-item"><div class="grow"><b></b><div class="muted"></div></div><div class="row-actions"></div></div>');
+    $("#ad-anns").replaceChildren(...(list.length ? list.map((a) => { const r = html('<div class="list-item"><div class="grow wrap"><b></b><div class="muted"></div></div><div class="row-actions"></div></div>');
       $("b", r).textContent = a.body; $(".muted", r).textContent = (a.kind === "alert" ? "Aviso" : "Notícia") + " · até às " + new Date(a.expires_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
       addActions(r, [{ label: "Apagar", icon: "trash", fn: async () => { await api.deleteAnnouncement(a.id); anns(); } }]); return r; }) : [note("Nenhum aviso ativo.")]));
   };
@@ -976,6 +986,11 @@ async function viewAdmin() {
         acts.push({ label: u.is_banned ? "Desbanir" : "Banir", fn: async () => {
           if (u.is_banned) { await api.adminUnban(u.id); } else { const why = prompt(`Banir @${u.username}? Motivo (opcional):`); if (why === null) return; await api.adminBan(u.id, why); }
           users(q); stats(); } });
+        acts.push({ label: "Banir para sempre", fn: async () => {
+          const typed = prompt(`BANIMENTO PERMANENTE de @${u.username}.\nApaga a conta e TODAS as mensagens, publicações e ficheiros dela. Não dá para desfazer.\n\nEscreve o nome de utilizador para confirmar:`);
+          if (typed === null) return; if (typed.trim() !== u.username) return toast("O nome não coincide. Nada foi feito.");
+          const why = prompt("Motivo (opcional):"); if (why === null) return;
+          await api.adminBanPermanent(u.id, why); toast("Conta apagada e banida para sempre."); users(q); stats(); } });
       }
       return listRow(u, "@" + u.username + (u.is_banned ? " · BANIDO" : ""), "#/u/" + u.username, acts);
     }) : [note("Ninguém encontrado.")]));
