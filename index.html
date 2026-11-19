@@ -215,6 +215,14 @@ dialog { max-height: 90dvh; overflow-y: auto; }
 /* Corrige páginas que alargavam com texto longo (ex.: avisos grandes no painel) */
 .page { grid-template-columns: minmax(0, 1fr); } .page > * { min-width: 0; }
 .list-item .grow.wrap > * { white-space: normal; overflow-wrap: anywhere; }
+/* Painel de administração: separadores e cartões de utilizador */
+.sec { display: grid; gap: 14px; } .adm-tabs { flex-wrap: wrap; }
+.ulist { display: grid; gap: 10px; margin-top: 12px; }
+.ucard { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px; display: grid; gap: 10px; }
+.ucard-top { display: flex; align-items: center; gap: 12px; } .ucard .grow { flex: 1; min-width: 0; cursor: pointer; }
+.ucard .grow b { display: block; overflow-wrap: anywhere; } .ucard .muted { font-size: 13px; overflow-wrap: anywhere; }
+.uacts { margin-left: 0 !important; justify-content: flex-start !important; border-top: 1px solid var(--line); padding-top: 10px; }
+.reqmsg { margin: 0; padding: 10px 12px; background: var(--surface); border-left: 3px solid var(--accent); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Avisos e notícias (topo da página inicial) */
 .ann { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r-lg); border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); animation: enter .3s var(--ease) both; }
 .ann.ann-alert { border-color: #f5b82e; background: color-mix(in srgb, #f5b82e 16%, var(--surface)); }
@@ -515,8 +523,9 @@ const liveApi = {
   },
   /* ----- Administração: selos, banimentos e avisos ----- */
   async adminStats() { const { data, error } = await sb.rpc("admin_stats"); if (error) throw error; return data; },
-  async adminUsers(q) {
+  async adminUsers(q, banned) {
     let r = sb.from("profiles").select("id,username,display_name,avatar_url,avatar_frame,badge,is_banned,ban_reason").order("created_at", { ascending: false }).limit(30);
+    if (banned !== undefined) r = r.eq("is_banned", banned);
     if (q) { const t = q.replace(/[%,()]/g, ""); r = r.or(`username.ilike.%${t}%,display_name.ilike.%${t}%`); }
     const { data, error } = await r; if (error) throw error; return data;
   },
@@ -529,6 +538,10 @@ const liveApi = {
     }
     const { error } = await sb.rpc("admin_ban_permanent", { uid, reason }); if (error) throw error;
   },
+  async adminRequests() { const { data, error } = await sb.from("unban_requests").select("id,message,created_at,user_id,profiles(id,username,display_name,avatar_url,avatar_frame,badge,ban_reason)").eq("status", "pending").order("created_at"); if (error) throw error; return data; },
+  async adminResolveRequest(id, approve, note) { const { error } = await sb.rpc("admin_resolve_request", { rid: id, approve, note }); if (error) throw error; },
+  async myUnbanRequest() { const { data } = await sb.from("unban_requests").select("id,status,admin_note,created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(); return data; },
+  async requestUnban(message) { const { error } = await sb.rpc("request_unban", { p_message: message }); if (error) throw error; },
   async adminUnban(uid) { const { error } = await sb.rpc("admin_unban", { uid }); if (error) throw error; },
   async activeAnnouncements() { const { data, error } = await sb.from("announcements").select("id,kind,body,created_at,expires_at").gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }); if (error) throw error; return data; },
   async postAnnouncement(body, kind, minutes) { const { error } = await sb.rpc("post_announcement", { p_body: body, p_kind: kind, p_minutes: minutes }); if (error) throw error; },
@@ -950,25 +963,66 @@ async function viewPerfil() {
   };
 }
 
-function viewBanned(reason) {
+/* ---- Conta banida: a pessoa pode pedir o desbanimento ---- */
+const MIN_APPEAL = 10;   // mínimo de caracteres do pedido de desbanimento (mude também no SQL)
+async function viewBanned(reason) {
   document.body.classList.add("auth-mode");
-  $("#app").innerHTML = '<main class="card auth-card"><h1>Conta banida</h1><p class="sub muted" id="ban-msg"></p><button class="btn btn-block" id="ban-out">Sair</button></main>';
+  $("#app").innerHTML = '<main class="card auth-card"><h1>Conta banida</h1><p class="sub muted" id="ban-msg"></p><div id="ban-req"></div><button class="btn btn-block" id="ban-out" style="margin-top:14px">Sair</button></main>';
   $("#ban-msg").textContent = "Esta conta foi banida da plataforma." + (reason ? " Motivo: " + reason : "");
   $("#ban-out").onclick = async () => { stopListeners(); try { await sb.auth.signOut(); } catch {} location.hash = "#/login"; };
+  const paint = async () => {
+    const r = await safe(() => api.myUnbanRequest()), box = $("#ban-req"); if (!box) return; box.replaceChildren();
+    if (r && r.status === "pending") return box.append(note("Pedido de desbanimento enviado. Aguarda a resposta dos administradores."));
+    if (r && r.status === "denied") { const p = html('<p class="error"></p>'); p.textContent = "O teu último pedido foi recusado." + (r.admin_note ? " " + r.admin_note : ""); box.append(p); }
+    const f = html('<form><div class="field"><label for="ub-msg">Pedir desbanimento</label><textarea class="input" id="ub-msg" maxlength="500" placeholder="Explica porque achas que o ban deve ser levantado…" style="min-height:120px"></textarea><p class="muted" id="ub-count" style="font-size:13px;margin:6px 0 0"></p></div><button class="btn btn-primary btn-block">Enviar pedido</button></form>');
+    const upd = () => { const n = $("#ub-msg").value.trim().length; $("#ub-count").textContent = `${n}/${MIN_APPEAL} caracteres (mínimo)`; };
+    $("#ub-msg", f).oninput = upd; upd();
+    f.onsubmit = async (e) => { e.preventDefault(); if ($("#ub-msg").value.trim().length < MIN_APPEAL) return toast(`Explica melhor: escreve pelo menos ${MIN_APPEAL} caracteres.`); const ok = await safe(async () => { await api.requestUnban($("#ub-msg").value); return true; }); if (ok) { toast("Pedido enviado"); paint(); } };
+    box.append(f);
+  };
+  paint();
+  onLive = async () => {   // se um administrador aprovar, a conta volta sozinha
+    const p = await safe(() => api.profile(ME.id));
+    if (p && !p.is_banned) { ME = p; router(); } else paint();
+  };
 }
 
 /* ---- Painel de administração (só selo amarelo) ---- */
 async function viewAdmin() {
   if (!isAdmin()) return (location.hash = "#/");
-  mountPage("admin", `<main class="page"><h2 class="ptitle">Administração</h2>
-    <div class="card"><h3>Resumo</h3><div class="profile-stats" id="ad-stats"></div></div>
-    <div class="card"><h3>Novo aviso</h3>
-      <div class="field"><label for="an-kind">Tipo</label><select class="input" id="an-kind"><option value="news">Notícia</option><option value="alert">Aviso importante</option></select></div>
-      <div class="field"><label for="an-body">Mensagem</label><textarea class="input" id="an-body" maxlength="300" style="min-height:90px"></textarea></div>
-      <div class="field"><label for="an-time">Quanto tempo fica visível</label><select class="input" id="an-time"><option value="15">15 minutos</option><option value="60">1 hora</option><option value="180">3 horas</option><option value="360">6 horas</option><option value="720">12 horas</option><option value="1440" selected>24 horas (máximo)</option></select></div>
-      <button class="btn btn-primary" id="an-send">Publicar aviso</button></div>
-    <div class="card"><h3>Avisos ativos</h3><div id="ad-anns"></div></div>
-    <div class="card"><h3>Utilizadores</h3><input class="input" id="ad-q" placeholder="Procurar por nome ou @utilizador…"><div id="ad-users"></div></div></main>`, false);
+  mountPage("admin", `<main class="page"><h2 class="ptitle">Administração</h2><div class="tabs adm-tabs" id="ad-tabs"></div>
+    <section class="sec" data-sec="painel">
+      <div class="card"><h3>Resumo</h3><div class="profile-stats" id="ad-stats"></div></div>
+      <div class="card"><h3>Novo aviso</h3>
+        <div class="field"><label for="an-kind">Tipo</label><select class="input" id="an-kind"><option value="news">Notícia</option><option value="alert">Aviso importante</option></select></div>
+        <div class="field"><label for="an-body">Mensagem</label><textarea class="input" id="an-body" maxlength="300" style="min-height:90px"></textarea></div>
+        <div class="field"><label for="an-time">Quanto tempo fica visível</label><select class="input" id="an-time"><option value="15">15 minutos</option><option value="60">1 hora</option><option value="180">3 horas</option><option value="360">6 horas</option><option value="720">12 horas</option><option value="1440" selected>24 horas (máximo)</option></select></div>
+        <button class="btn btn-primary" id="an-send">Publicar aviso</button></div>
+      <div class="card"><h3>Avisos ativos</h3><div id="ad-anns"></div></div></section>
+    <section class="sec hidden" data-sec="users"><div class="card"><h3>Utilizadores</h3><input class="input" id="ad-q" placeholder="Procurar por nome ou @utilizador…"><div class="ulist" id="ad-users"></div></div></section>
+    <section class="sec hidden" data-sec="banned"><div class="card"><h3>Utilizadores banidos</h3><div class="ulist" id="ad-banned"></div></div></section>
+    <section class="sec hidden" data-sec="requests"><div class="card"><h3>Pedidos de desbanimento</h3><div class="ulist" id="ad-reqs"></div></div></section></main>`, false);
+
+  const TABS = [["painel", "Painel"], ["users", "Utilizadores"], ["banned", "Banidos"], ["requests", "Pedidos"]], counts = {};
+  let tab = "painel", q = "";
+  const paintTabs = () => {
+    $("#ad-tabs").replaceChildren(...TABS.map(([k, l]) => { const b = html(`<button class="btn${k === tab ? " btn-primary" : ""}"></button>`); b.textContent = l + (counts[k] ? ` (${counts[k]})` : ""); b.onclick = () => { tab = k; paintTabs(); }; return b; }));
+    document.querySelectorAll("[data-sec]").forEach((el) => el.classList.toggle("hidden", el.dataset.sec !== tab));
+  };
+  const card = (u, extra, acts) => {   // cartão de utilizador com ações por baixo
+    const el = html('<div class="ucard"><div class="ucard-top"><div class="grow"><b></b><div class="muted"></div></div></div><div class="uacts row-actions"></div></div>');
+    $(".ucard-top", el).prepend(avatar(u.display_name || u.username, u.avatar_url, "", u.avatar_frame));
+    nameWithBadge($("b", el), u.display_name || u.username, u.badge); $(".muted", el).textContent = "@" + u.username + (extra ? " · " + extra : "");
+    $(".grow", el).onclick = () => (location.hash = "#/u/" + u.username);
+    addActions(el, acts); return el;
+  };
+  const all = () => { stats(); users(); banned(); requests(); };
+  const permBan = (u) => ({ label: "Banir para sempre", danger: true, fn: async () => {
+    const typed = prompt(`BANIMENTO PERMANENTE de @${u.username}.\nApaga a conta e TODAS as mensagens, publicações e ficheiros dela. Não dá para desfazer.\n\nEscreve o nome de utilizador para confirmar:`);
+    if (typed === null) return; if (typed.trim() !== u.username) return toast("O nome não coincide. Nada foi feito.");
+    const why = prompt("Motivo (opcional):"); if (why === null) return;
+    await api.adminBanPermanent(u.id, why); toast("Conta apagada e banida para sempre."); all(); } });
+
   const stats = async () => { const st = await safe(() => api.adminStats()); if (!st) return;
     $("#ad-stats").innerHTML = [[st.users, "utilizadores"], [st.posts, "publicações"], [st.verified, "verificados"], [st.banned, "banidos"]].map(([n, l]) => `<div><b>${n}</b> <span class="muted">${l}</span></div>`).join(""); };
   const anns = async () => {
@@ -977,31 +1031,35 @@ async function viewAdmin() {
       $("b", r).textContent = a.body; $(".muted", r).textContent = (a.kind === "alert" ? "Aviso" : "Notícia") + " · até às " + new Date(a.expires_at).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
       addActions(r, [{ label: "Apagar", icon: "trash", fn: async () => { await api.deleteAnnouncement(a.id); anns(); } }]); return r; }) : [note("Nenhum aviso ativo.")]));
   };
-  const users = async (q = "") => {
-    const list = (await safe(() => api.adminUsers(q))) || [];
-    $("#ad-users").replaceChildren(...(list.length ? list.map((u) => {
-      const acts = [];
-      if (u.badge !== "gold") {
-        acts.push({ label: u.badge === "blue" ? "Tirar selo" : "Dar selo", fn: async () => { await api.adminSetBadge(u.id, u.badge === "blue" ? null : "blue"); users(q); } });
-        acts.push({ label: u.is_banned ? "Desbanir" : "Banir", fn: async () => {
-          if (u.is_banned) { await api.adminUnban(u.id); } else { const why = prompt(`Banir @${u.username}? Motivo (opcional):`); if (why === null) return; await api.adminBan(u.id, why); }
-          users(q); stats(); } });
-        acts.push({ label: "Banir para sempre", fn: async () => {
-          const typed = prompt(`BANIMENTO PERMANENTE de @${u.username}.\nApaga a conta e TODAS as mensagens, publicações e ficheiros dela. Não dá para desfazer.\n\nEscreve o nome de utilizador para confirmar:`);
-          if (typed === null) return; if (typed.trim() !== u.username) return toast("O nome não coincide. Nada foi feito.");
-          const why = prompt("Motivo (opcional):"); if (why === null) return;
-          await api.adminBanPermanent(u.id, why); toast("Conta apagada e banida para sempre."); users(q); stats(); } });
-      }
-      return listRow(u, "@" + u.username + (u.is_banned ? " · BANIDO" : ""), "#/u/" + u.username, acts);
-    }) : [note("Ninguém encontrado.")]));
+  const users = async () => {
+    const list = (await safe(() => api.adminUsers(q, false))) || [];
+    $("#ad-users").replaceChildren(...(list.length ? list.map((u) => card(u, u.badge === "gold" ? "Administrador" : "", u.badge === "gold" ? [] : [
+      { label: u.badge === "blue" ? "Tirar selo" : "Dar selo", fn: async () => { await api.adminSetBadge(u.id, u.badge === "blue" ? null : "blue"); all(); } },
+      { label: "Banir", fn: async () => { const why = prompt(`Banir @${u.username}? (reversível) Motivo (opcional):`); if (why === null) return; await api.adminBan(u.id, why); all(); } },
+      permBan(u)])) : [note("Ninguém encontrado.")]));
   };
-  stats(); anns(); users();
+  const banned = async () => {
+    const list = (await safe(() => api.adminUsers("", true))) || []; counts.banned = list.length; paintTabs();
+    $("#ad-banned").replaceChildren(...(list.length ? list.map((u) => card(u, u.ban_reason ? "Motivo: " + u.ban_reason : "Banido", [
+      { label: "Desbanir", primary: true, fn: async () => { await api.adminUnban(u.id); all(); } }, permBan(u)])) : [note("Não há utilizadores banidos.")]));
+  };
+  const requests = async () => {
+    const list = (await safe(() => api.adminRequests())) || []; counts.requests = list.length; paintTabs();
+    $("#ad-reqs").replaceChildren(...(list.length ? list.map((r) => {
+      const el = card(r.profiles, "pediu " + timeAgo(r.created_at), [
+        { label: "Aprovar e desbanir", primary: true, fn: async () => { await api.adminResolveRequest(r.id, true, ""); all(); } },
+        { label: "Recusar", fn: async () => { const n = prompt("Mensagem para a pessoa (opcional):"); if (n === null) return; await api.adminResolveRequest(r.id, false, n); all(); } }]);
+      const m = html('<p class="reqmsg"></p>'); m.textContent = r.message; el.insertBefore(m, $(".uacts", el)); return el;
+    }) : [note("Não há pedidos a aguardar.")]));
+  };
+  paintTabs(); all(); anns();
   $("#an-send").onclick = async () => {
     const body = $("#an-body").value.trim(); if (!body) return toast("Escreve a mensagem do aviso.");
     const ok = await safe(async () => { await api.postAnnouncement(body, $("#an-kind").value, Number($("#an-time").value)); return true; });
     if (ok) { $("#an-body").value = ""; toast("Aviso publicado"); anns(); }
   };
-  let t; $("#ad-q").oninput = (e) => { clearTimeout(t); t = setTimeout(() => users(e.target.value.trim()), 300); };
+  let t; $("#ad-q").oninput = (e) => { clearTimeout(t); t = setTimeout(() => { q = e.target.value.trim(); users(); }, 300); };
+  onLive = (tb) => { if (tb === "unban_requests" || tb === "profiles") all(); else if (tb === "announcements") anns(); };
 }
 
 /* ---- Código de recuperação: mostra o código uma vez, com guia para o guardar ---- */
@@ -1034,7 +1092,7 @@ function listRow(p, sub, href, actions = []) {
 /* Acrescenta botões (com bloqueio durante a ação) ao .row-actions de um elemento */
 function addActions(el, actions) {
   for (const a of actions) {
-    const b = html(`<button class="btn${a.primary ? " btn-primary" : ""}"></button>`); b.textContent = a.label; if (a.icon) b.prepend(html(`<i class="ic ic-${a.icon}"></i>`), " ");
+    const b = html(`<button class="btn${a.primary ? " btn-primary" : ""}${a.danger ? " btn-danger" : ""}"></button>`); b.textContent = a.label; if (a.icon) b.prepend(html(`<i class="ic ic-${a.icon}"></i>`), " ");
     b.onclick = async () => { b.disabled = true; await safe(a.fn); b.disabled = false; };
     $(".row-actions", el).append(b);
   }
@@ -1457,7 +1515,14 @@ function startListeners(myId) {
   if (!liveChannel) liveChannel = sb.channel("live")
     .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, (pl) => { if (!(pl.new && pl.new.user_id === myId)) pokeLive("posts"); })
     .on("postgres_changes", { event: "*", schema: "public", table: "likes" }, (pl) => { if (!(pl.new && pl.new.user_id === myId)) pokeLive("likes"); })
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (pl) => { if (pl.new.id !== myId) pokeLive("profiles"); })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (pl) => {
+      if (pl.new.id !== myId) return pokeLive("profiles");
+      if (ME && (ME.is_banned !== pl.new.is_banned || ME.badge !== pl.new.badge)) { ME = { ...ME, ...pl.new }; router(); }   // o meu selo ou banimento mudou
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "unban_requests" }, (pl) => {
+      if (pl.eventType === "INSERT" && isAdmin()) toast("Novo pedido de desbanimento");
+      pokeLive("unban_requests");
+    })
     .on("postgres_changes", { event: "*", schema: "public", table: "comments" }, () => { if (openThreads.size) openThreads.forEach((f) => f()); else pokeLive("comments"); })
     .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, (pl) => {
       if (pl.eventType === "INSERT" && pl.new.author_id !== myId) { toast(`${pl.new.kind === "alert" ? "Aviso" : "Notícia"}: ${pl.new.body.slice(0, 80)}`); systemNotify("InLog", pl.new.body, "#/"); }
